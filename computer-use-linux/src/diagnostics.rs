@@ -1,6 +1,6 @@
 use crate::windowing::registry::{
     self, COSMIC_WAYLAND_BACKEND, GNOME_SHELL_EXTENSION_BACKEND, GNOME_SHELL_INTROSPECT_BACKEND,
-    HYPRLAND_BACKEND, KWIN_BACKEND,
+    HYPRLAND_BACKEND, KWIN_BACKEND, NIRI_BACKEND,
 };
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -109,6 +109,7 @@ pub struct WindowingReport {
     pub codex_gnome_shell_extension_screenshot: Check,
     pub cosmic_helper: Check,
     pub kwin: Check,
+    pub niri: Check,
     pub hyprland: Check,
     pub backends: BTreeMap<String, Check>,
     pub can_list_windows: bool,
@@ -237,6 +238,9 @@ fn capability_map(
     }
     if windowing.kwin.ok {
         window_backends.push("kwin".to_string());
+    }
+    if windowing.niri.ok {
+        window_backends.push("niri".to_string());
     }
     if windowing.hyprland.ok {
         window_backends.push("hyprland".to_string());
@@ -578,6 +582,7 @@ fn windowing_report(platform: &PlatformReport) -> WindowingReport {
     );
     let cosmic_helper = backend_check(COSMIC_WAYLAND_BACKEND);
     let kwin = backend_check(KWIN_BACKEND);
+    let niri = backend_check(NIRI_BACKEND);
     let hyprland = backend_check(HYPRLAND_BACKEND);
     let backends = probes
         .iter()
@@ -591,13 +596,15 @@ fn windowing_report(platform: &PlatformReport) -> WindowingReport {
             "A COSMIC Wayland window backend is available for list_windows, focused_window, and targeted input verification."
         } else if kwin.ok {
             "A KWin/Plasma window backend is available for list_windows, focused_window, and targeted input verification."
+        } else if niri.ok {
+            "A Niri window backend is available for list_windows, focused_window, and targeted input verification."
         } else if hyprland.ok {
             "A Hyprland window backend is available for list_windows, focused_window, and targeted input verification."
         } else {
             "A GNOME window listing backend is available for list_windows, focused_window, and targeted input verification."
         }
     } else {
-        "Window listing is unavailable or denied. Computer Use can still use screenshots, AT-SPI, and global ydotool input, but targeted window input cannot be verified. On GNOME, run setup_window_targeting to install the optional GNOME Shell extension backend. On COSMIC, ensure the bundled COSMIC helper is present and can connect to the session. On KDE/Plasma, ensure KWin exposes org.kde.KWin scripting on the session bus. On Hyprland, ensure hyprctl is available in the session."
+        "Window listing is unavailable or denied. Computer Use can still use screenshots, AT-SPI, and global ydotool input, but targeted window input cannot be verified. On GNOME, run setup_window_targeting to install the optional GNOME Shell extension backend. On COSMIC, ensure the bundled COSMIC helper is present and can connect to the session. On KDE/Plasma, ensure KWin exposes org.kde.KWin scripting on the session bus. On Niri, ensure niri msg -j windows works in the session. On Hyprland, ensure hyprctl is available in the session."
     }
     .to_string();
 
@@ -607,6 +614,7 @@ fn windowing_report(platform: &PlatformReport) -> WindowingReport {
         codex_gnome_shell_extension_screenshot,
         cosmic_helper,
         kwin,
+        niri,
         hyprland,
         backends,
         can_list_windows,
@@ -1053,6 +1061,7 @@ mod tests {
             },
             cosmic_helper: Check::fail("missing"),
             kwin: Check::fail("not a KWin session"),
+            niri: Check::fail("not a Niri session"),
             hyprland: Check::fail("not a Hyprland session"),
             backends: BTreeMap::new(),
             can_list_windows,

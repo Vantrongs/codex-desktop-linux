@@ -6,7 +6,7 @@ pub mod types;
 #[allow(unused_imports)]
 pub use registry::{
     COSMIC_WAYLAND_BACKEND, GNOME_SHELL_EXTENSION_BACKEND, GNOME_SHELL_INTROSPECT_BACKEND,
-    HYPRLAND_BACKEND, I3_BACKEND, KWIN_BACKEND, WINDOW_PERMISSION_HINT,
+    HYPRLAND_BACKEND, I3_BACKEND, KWIN_BACKEND, NIRI_BACKEND, WINDOW_PERMISSION_HINT,
 };
 #[allow(unused_imports)]
 pub use target::{
@@ -25,6 +25,7 @@ mod tests {
         kwin_activate_script_source, kwin_window_id_from_uuid, kwin_window_script_source,
         parse_kwin_windows, KWIN_BACKEND,
     };
+    use super::backends::niri::parse_niri_windows;
     use super::registry::{
         descriptors, list_note, COSMIC_WAYLAND_BACKEND, GNOME_SHELL_EXTENSION_BACKEND,
         GNOME_SHELL_INTROSPECT_BACKEND,
@@ -54,6 +55,7 @@ mod tests {
                 GNOME_SHELL_INTROSPECT_BACKEND,
                 COSMIC_WAYLAND_BACKEND,
                 KWIN_BACKEND,
+                NIRI_BACKEND,
                 HYPRLAND_BACKEND,
                 I3_BACKEND,
             ]
@@ -236,6 +238,123 @@ mod tests {
             &window,
         )
         .unwrap();
+    }
+
+    #[test]
+    fn niri_backend_can_exact_focus_targets() {
+        let mut window = window(2, "Codex", "codex-desktop", "codex-desktop");
+        window.backend = NIRI_BACKEND.to_string();
+
+        ensure_backend_can_focus_target(
+            &WindowTarget {
+                title: Some("Codex".to_string()),
+                ..Default::default()
+            },
+            &window,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn parses_niri_windows() {
+        let windows = parse_niri_windows(
+            r#"[
+              {
+                "id": 41,
+                "title": "Codex",
+                "app_id": "codex-desktop",
+                "pid": 1740006,
+                "workspace_id": 1,
+                "is_focused": true,
+                "is_floating": false,
+                "is_urgent": false,
+                "layout": {
+                  "tile_size": [1920.0, 1056.0],
+                  "window_size": [1280, 720],
+                  "tile_pos_in_workspace_view": [10.0, 20.0],
+                  "window_offset_in_tile": [3.0, 4.0]
+                }
+              }
+            ]"#,
+            Some(
+                r#"[
+                  {
+                    "id": 1,
+                    "output": "HDMI-A-1"
+                  }
+                ]"#,
+            ),
+            Some(
+                r#"{
+                  "HDMI-A-1": {
+                    "logical": { "x": 1920, "y": 0 }
+                  }
+                }"#,
+            ),
+        )
+        .unwrap();
+
+        assert_eq!(windows.len(), 1);
+        assert_eq!(windows[0].backend, NIRI_BACKEND);
+        assert_eq!(windows[0].window_id, 41);
+        assert_eq!(windows[0].title.as_deref(), Some("Codex"));
+        assert_eq!(windows[0].app_id.as_deref(), Some("codex-desktop"));
+        assert_eq!(windows[0].wm_class.as_deref(), Some("codex-desktop"));
+        assert_eq!(windows[0].pid, Some(1740006));
+        assert_eq!(windows[0].workspace, Some(1));
+        assert!(windows[0].focused);
+        let bounds = windows[0].bounds.as_ref().unwrap();
+        assert_eq!(bounds.x, Some(1933));
+        assert_eq!(bounds.y, Some(24));
+        assert_eq!(bounds.width, 1280);
+        assert_eq!(bounds.height, 720);
+    }
+
+    #[test]
+    fn keeps_niri_geometry_unknown_when_ipc_values_are_not_safe() {
+        let windows = parse_niri_windows(
+            r#"[
+              {
+                "id": 42,
+                "title": "Invalid raw values",
+                "app_id": "example.invalid",
+                "pid": -1,
+                "workspace_id": 4294967296,
+                "layout": {
+                  "window_size": [-1, 720],
+                  "tile_pos_in_workspace_view": [10.0, 20.0],
+                  "window_offset_in_tile": [0.0, 0.0]
+                }
+              },
+              {
+                "id": 43,
+                "title": "Inactive workspace",
+                "app_id": "example.inactive",
+                "pid": 123,
+                "workspace_id": 1,
+                "layout": {
+                  "window_size": [800, 600],
+                  "tile_pos_in_workspace_view": null,
+                  "window_offset_in_tile": [0.0, 0.0]
+                }
+              }
+            ]"#,
+            Some(r#"[{"id":1,"output":"HDMI-A-1"}]"#),
+            Some(r#"{"HDMI-A-1":{"logical":{"x":1920,"y":0}}}"#),
+        )
+        .unwrap();
+
+        assert_eq!(windows[0].window_id, 42);
+        assert_eq!(windows[0].pid, None);
+        assert_eq!(windows[0].workspace, None);
+        assert!(windows[0].bounds.is_none());
+
+        assert_eq!(windows[1].window_id, 43);
+        let bounds = windows[1].bounds.as_ref().unwrap();
+        assert_eq!(bounds.x, None);
+        assert_eq!(bounds.y, None);
+        assert_eq!(bounds.width, 800);
+        assert_eq!(bounds.height, 600);
     }
 
     #[test]

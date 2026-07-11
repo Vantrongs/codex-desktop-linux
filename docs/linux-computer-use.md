@@ -8,7 +8,8 @@ It supports:
 
 - app listing and accessibility trees through AT-SPI
 - screenshots through GNOME Shell DBus, the Codex GNOME Shell extension, or XDG Desktop Portal
-- window listing and focusing on GNOME, KWin/Plasma, Hyprland, COSMIC, and i3
+- window listing and focusing on GNOME, KWin/Plasma, Niri, Hyprland, COSMIC,
+  and i3
 - keyboard, text, click, scroll, and drag input through `/dev/uinput`, XDG
   RemoteDesktop portal, or `ydotool`
 
@@ -55,6 +56,28 @@ or screenshots:
 - sway/wlroots: `xdg-desktop-portal-wlr`
 - Hyprland: `xdg-desktop-portal-hyprland`
 - GNOME: usually available by default
+
+### Niri window targeting
+
+The Niri backend uses the installed compositor CLI for `windows`, `workspaces`,
+`outputs`, and exact focus actions. Verify the session IPC directly with:
+
+```bash
+niri msg --json windows
+```
+
+Desktop processes started by a service do not always inherit `NIRI_SOCKET`.
+When it is absent, the backend looks for the newest `niri.*.sock` Unix socket
+under `XDG_RUNTIME_DIR` (or `/run/user/<uid>`).
+
+Niri reports `tile_pos_in_workspace_view` only when a reliable position is
+available. The backend combines that position with the workspace output's
+logical origin for multi-monitor global coordinates. If the position,
+workspace-to-output mapping, or output geometry is unavailable, window listing
+and exact focus still work but `bounds.x`/`bounds.y` remain `null`; relative
+window click/scroll operations then fail safely instead of guessing coordinates.
+A targeted screenshot cannot be cropped without an origin, so it falls back to
+the uncropped full-screen capture.
 
 ## Verify Readiness
 
