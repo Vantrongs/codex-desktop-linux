@@ -621,6 +621,15 @@ PY
           linuxFeatureIds = [ "remote-mobile-control" ];
         };
 
+        codexDesktopFullLinux = codexDesktop.override {
+          enableComputerUseUi = true;
+          linuxFeatureIds = [
+            "mcp-helper-reaper"
+            "open-target-discovery"
+            "remote-mobile-control"
+          ];
+        };
+
         codexDesktopNixFeatureCheck = codexDesktop.override {
           linuxFeatureIds = [
             "appshots"
@@ -679,6 +688,7 @@ PY
           codex-desktop-computer-use-ui = codexDesktopComputerUseUi;
           codex-desktop-remote-mobile-control = codexDesktopRemoteMobileControl;
           codex-desktop-computer-use-ui-remote-mobile-control = codexDesktopComputerUseUiRemoteMobileControl;
+          codex-desktop-full-linux = codexDesktopFullLinux;
           installer = installer;
         };
 
