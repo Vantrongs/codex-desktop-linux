@@ -660,6 +660,7 @@ PY
           linuxFeatureIds = [
             "mcp-helper-reaper"
             "open-target-discovery"
+            "pet-overlay"
             "remote-mobile-control"
           ];
         };
