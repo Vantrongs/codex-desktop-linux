@@ -11,6 +11,7 @@ on:
       - scripts/patch-linux-window-ui.test.js
       - scripts/patches/**
       - linux-features/remote-mobile-control/**
+      - linux-features/ui-tweaks/**
       - scripts/ci/validate-patch-report.js
       - .github/workflows/upstream-build-app.yml
   push:
@@ -23,6 +24,7 @@ on:
       - scripts/patch-linux-window-ui.test.js
       - scripts/patches/**
       - linux-features/remote-mobile-control/**
+      - linux-features/ui-tweaks/**
       - scripts/ci/validate-patch-report.js
       - .github/workflows/upstream-build-app.yml
   workflow_dispatch:
@@ -142,7 +144,7 @@ jobs:
       - name: Validate required upstream patches
         run: node scripts/ci/validate-patch-report.js patch-report.json --profile upstream-build
 
-      - name: Inspect upstream DMG with remote mobile control enabled
+      - name: Inspect upstream DMG with drift-sensitive features enabled
         run: |
           set -euo pipefail
 
@@ -150,7 +152,7 @@ jobs:
           report_dir="$GITHUB_WORKSPACE/remote-mobile-upstream-inspect"
           trap 'rm -f "$features_config"' EXIT
 
-          printf '%s\n' '{"enabled":["remote-mobile-control"]}' > "$features_config"
+          printf '%s\n' '{"enabled":["remote-mobile-control","ui-tweaks"]}' > "$features_config"
 
           CODEX_LINUX_FEATURES_CONFIG="$features_config" \
             make inspect-upstream DMG="$UPSTREAM_DMG_PATH" REBUILD_REPORT_DIR="$report_dir"
@@ -158,12 +160,19 @@ jobs:
           node scripts/ci/validate-patch-report.js "$report_dir/patch-report.json" \
             --profile upstream-build \
             --require-enabled-feature remote-mobile-control \
+            --require-enabled-feature ui-tweaks \
             --require-applied linux-app-server-conversation-hydration \
             --require-applied linux-completed-item-recovery \
             --require-applied feature:remote-mobile-control:linux-remote-control-load-gate \
             --require-success feature:remote-mobile-control:linux-remote-mobile-conversation-hydration \
             --require-applied feature:remote-mobile-control:linux-remote-control-status-read-guard \
-            --require-applied feature:remote-mobile-control:linux-remote-control-status-wait
+            --require-applied feature:remote-mobile-control:linux-remote-control-status-wait \
+            --require-applied feature:ui-tweaks:sidebar-project-name-style \
+            --require-applied feature:ui-tweaks:model-picker-default-advanced-view \
+            --require-applied feature:ui-tweaks:model-picker-include-gpt-5-6 \
+            --require-applied feature:ui-tweaks:model-picker-inline-model-list \
+            --require-applied feature:ui-tweaks:model-picker-dynamic-supported-reasoning-efforts \
+            --require-applied feature:ui-tweaks:reasoning-effort-labels-english
 
       - name: Upload upstream DMG metadata artifact
         # The build step now aborts on critical patch failures; keep uploading
