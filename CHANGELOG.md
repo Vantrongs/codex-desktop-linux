@@ -21,8 +21,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   XDG GlobalShortcuts and RemoteDesktop portals for press, release, and paste
   handling without direct input-device access or elevated permissions.
 
+### Changed
+
+- Remote mobile control now relies on the current upstream account-enrollment
+  compatibility and Connections tab resolver instead of patching duplicate
+  Linux-specific fallbacks into those paths.
+- Remote notification hydration, replay, completed-item recovery, and remote
+  terminal-status recovery are no longer part of the default Linux patch set and
+  remain owned by the disabled-by-default `remote-mobile-control` feature.
+- The `remote-mobile-control` feature no longer duplicates the generic Linux
+  `remote_control` config preservation patch already owned by the core patch
+  set.
+
 ### Fixed
 
+- Approval notifications now preserve the upstream Approve, Approve for
+  session, and Decline actions on Linux. A small freedesktop notification
+  bridge forwards the action and close signals that Electron's Linux
+  notification backend does not expose, with the existing View-only Electron
+  notification retained as a fail-soft fallback.
+- The opt-in `frameless-titlebar` feature now removes Electron-drawn window
+  controls from Quick Chat as well as the primary window, keeping compositor-
+  managed decoration behavior consistent across both window types.
+- Remote mobile cold starts now select one runtime owner deterministically.
+  Explicit systemd user-service configuration takes precedence over the
+  Desktop app-server and standalone fallback, while a versioned Desktop marker
+  prevents stale or forged marker content from suppressing the fallback.
+- Remote mobile device keys now use a bounded, versioned file store with
+  serialized read-modify-write updates and crash-durable atomic replacement.
+  Unsafe paths, file types, ownership, permissions, malformed records, and
+  oversized stores fail closed instead of being followed or silently erased.
+- Remote mobile control now patches the current upstream webview chunks for
+  feature sync, settings visibility, host enablement, and active conversation
+  status. Revoking the final controller now also clears the current mobile setup
+  state. The enablement bridge accepts the current bundle ordering where its log
+  marker is declared after the request handler.
 - Automated user-local updates no longer inherit or set developer overrides
   that could replace a running Electron app or bypass DMG acceptance. Manual
   and timer rebuilds now fail safely at promotion, transactional installs retain
@@ -32,10 +65,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   Linux X11. This avoids a GNOME Shell modal input grab that could lock desktop
   input and flood system logs, while preserving parented dialogs on Wayland,
   macOS, and Windows.
-- Resuming a completed thread no longer leaves it registered as streaming when
-  the app server reports no active runtime. This clears stale stream ownership
-  before the next message instead of leaving the renderer in a repeated thread
-  history refresh path.
+- Completed thread resume and turn submission once again use the upstream
+  conversation ownership lifecycle. Removing the Linux-only ownership reset
+  and submit-time reclaim avoids false ownership after failed turn starts and
+  races between windows.
 - Updater DMG downloads now publish crash-durable, content-addressed files only
   after a complete streamed download. Concurrent daemon and wrapper rebuilds
   cannot truncate or replace each other's input, and DMG hashing stays bounded
