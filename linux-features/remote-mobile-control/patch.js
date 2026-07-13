@@ -18,6 +18,7 @@ const DEVICE_KEY_REQUIRE_NEEDLE =
   /(?:var|let|const)\s+[A-Za-z_$][\w$]*=\(0,[A-Za-z_$][\w$]*\.createRequire\)\(__filename\),[A-Za-z_$][\w$]*=`remote-control-device-key\.node`/u;
 const REMOTE_CONTROL_SETTINGS_VISIBILITY_NEEDLE =
   /function ([A-Za-z_$][\w$]*)\(\{remoteControlConnectionsState:([A-Za-z_$][\w$]*),slingshotEnabled:([A-Za-z_$][\w$]*)\}\)\{return \3&&\(\2\?\.available\?\?!0\)(?:&&\2\?\.accessRequired!==!0)?\}/u;
+const REMOTE_CONTROL_VISIBILITY_MARKER = "codexLinuxRemoteControlVisibility";
 const REMOTE_CONTROL_SETTINGS_UX_MARKER = "codexLinuxRemoteControlSettingsTabs";
 const REMOTE_CONTROL_SETTINGS_TABS_HELPER =
   "function codexLinuxRemoteControlSettingsTabs(e){return e}";
@@ -54,7 +55,7 @@ const REMOTE_MOBILE_CONVERSATION_ASSET_PATTERN =
 const REMOTE_CONTROL_APP_MAIN_PAGE_ASSET_PATTERN =
   /^app-initial~app-main~page-[^.]+\.js$/u;
 const REMOTE_CONTROL_VISIBILITY_ASSET_PATTERN =
-  /^app-initial~app-main~new-thread-panel-page~appgen-library-page~hotkey-window-thread-page~ho~iufn7mg3-[^.]+\.js$/u;
+  /^app-initial~app-main~page-[^.]+\.js$/u;
 const REMOTE_MOBILE_ACTIVE_STATUS_ASSET_PATTERN =
   /^app-initial~app-main~projects-index-page~remote-conversation-page-[^.]+\.js$/u;
 const REMOTE_CONTROL_LINUX_COPY_REPLACEMENTS = [
@@ -439,10 +440,7 @@ function applyLinuxRemoteControlFeatureSyncHostScopePatch(source) {
 }
 
 function applyLinuxRemoteControlVisibilityPatch(source) {
-  if (
-    source.includes("remoteControlConnectionsState") &&
-      source.includes("navigator.userAgent.includes(`Linux`)")
-  ) {
+  if (source.includes(REMOTE_CONTROL_VISIBILITY_MARKER)) {
     return source;
   }
   if (!source.includes("remoteControlConnectionsState")) {
@@ -458,7 +456,7 @@ function applyLinuxRemoteControlVisibilityPatch(source) {
   const [, functionName, stateVar, slingshotVar] = settingsVisibilityMatch;
   return source.replace(
     REMOTE_CONTROL_SETTINGS_VISIBILITY_NEEDLE,
-    `function ${functionName}({remoteControlConnectionsState:${stateVar},slingshotEnabled:${slingshotVar}}){let n=typeof navigator!=\`undefined\`&&navigator.userAgent.includes(\`Linux\`);return(n||${slingshotVar})&&(n||(${stateVar}?.available??!0))&&${stateVar}?.accessRequired!==!0}`,
+    `function ${functionName}({remoteControlConnectionsState:${stateVar},slingshotEnabled:${slingshotVar}}){let n=${REMOTE_CONTROL_VISIBILITY_MARKER}();return(n||${slingshotVar})&&(n||(${stateVar}?.available??!0))&&${stateVar}?.accessRequired!==!0}function ${REMOTE_CONTROL_VISIBILITY_MARKER}(){return typeof navigator!=\`undefined\`&&navigator.userAgent.includes(\`Linux\`)}`,
   );
 }
 

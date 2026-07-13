@@ -58,8 +58,6 @@ const UNIFIED_REMOTE_CONVERSATION_ASSET =
   "app-initial~app-main~onboarding-page~hotkey-window-thread-page~quick-chat-window-page~chatg~gwqc41kz-test.js";
 const CURRENT_APP_MAIN_PAGE_ASSET =
   "app-initial~app-main~page-test.js";
-const CURRENT_REMOTE_CONNECTIONS_VISIBILITY_ASSET =
-  "app-initial~app-main~new-thread-panel-page~appgen-library-page~hotkey-window-thread-page~ho~iufn7mg3-test.js";
 const CURRENT_REMOTE_CONVERSATION_STATUS_ASSET =
   "app-initial~app-main~projects-index-page~remote-conversation-page-test.js";
 
@@ -1006,7 +1004,13 @@ test("remote mobile control feature exposes opt-in main-bundle and webview patch
     );
     assert.ok(visibilityDescriptor);
     assert.equal(visibilityDescriptor.pattern.test("remote-connections-settings-fixture.js"), false);
-    assert.equal(visibilityDescriptor.pattern.test(CURRENT_REMOTE_CONNECTIONS_VISIBILITY_ASSET), true);
+    assert.equal(visibilityDescriptor.pattern.test(CURRENT_APP_MAIN_PAGE_ASSET), true);
+    assert.equal(
+      visibilityDescriptor.pattern.test(
+        "app-initial~app-main~new-thread-panel-page~appgen-library-page~hotkey-window-thread-page~ho~iufn7mg3-test.js",
+      ),
+      false,
+    );
     assert.equal(visibilityDescriptor.pattern.test("use-plugin-install-flow-fixture.js"), false);
     assert.equal(visibilityDescriptor.pattern.test("app-main-fixture.js"), false);
 
@@ -2453,12 +2457,10 @@ test("remote mobile feature patch report records feature metadata and partial wa
           syntheticRemoteTerminalStatusBundle(),
       );
       fs.writeFileSync(
-        path.join(assetsDir, CURRENT_REMOTE_CONNECTIONS_VISIBILITY_ASSET),
-        syntheticRemoteConnectionVisibilityBundle(),
-      );
-      fs.writeFileSync(
         path.join(assetsDir, CURRENT_APP_MAIN_PAGE_ASSET),
-        syntheticAppMainFeatureSyncBundle() + syntheticAppMainEnablementBridgeBundle(),
+        syntheticRemoteConnectionVisibilityBundle() +
+          syntheticAppMainFeatureSyncBundle() +
+          syntheticAppMainEnablementBridgeBundle(),
       );
       fs.writeFileSync(
         path.join(assetsDir, CURRENT_REMOTE_CONVERSATION_STATUS_ASSET),
@@ -3146,10 +3148,6 @@ test("remote mobile control feature participates in ASAR patching and reports", 
             syntheticRemoteTerminalStatusBundle(),
         );
         fs.writeFileSync(
-          path.join(assetsDir, CURRENT_REMOTE_CONNECTIONS_VISIBILITY_ASSET),
-          syntheticCurrentUsePluginVisibilityBundle(),
-        );
-        fs.writeFileSync(
           path.join(assetsDir, "remote-connections-settings-test.js"),
           syntheticSettingsBundle() +
             syntheticRemoteConnectionsSettingsCopyBundle() +
@@ -3174,7 +3172,8 @@ test("remote mobile control feature participates in ASAR patching and reports", 
         );
         fs.writeFileSync(
           path.join(assetsDir, CURRENT_APP_MAIN_PAGE_ASSET),
-          syntheticAppMainFeatureSyncBundle() +
+          syntheticCurrentUsePluginVisibilityBundle() +
+            syntheticAppMainFeatureSyncBundle() +
             syntheticAppMainEnablementBridgeBundle(),
         );
         fs.writeFileSync(
@@ -3187,10 +3186,6 @@ test("remote mobile control feature participates in ASAR patching and reports", 
         const patchedFile = fs.readFileSync(path.join(buildDir, "main.js"), "utf8");
         const patchedAppServerLaunchFile = fs.readFileSync(
           path.join(buildDir, "workspace-root-drop-handler-test.js"),
-          "utf8",
-        );
-        const patchedVisibilityFile = fs.readFileSync(
-          path.join(assetsDir, CURRENT_REMOTE_CONNECTIONS_VISIBILITY_ASSET),
           "utf8",
         );
         const patchedRemoteConnectionVisibilityFile = fs.readFileSync(
@@ -3231,7 +3226,7 @@ test("remote mobile control feature participates in ASAR patching and reports", 
         assert.match(patchedAppServerLaunchFile, /`--remote-control`/);
         assert.match(patchedRemoteConnectionVisibilityFile, /codexLinuxRemoteControlLoadGateEnabled/);
         assert.match(patchedAppMainFile, /\.remote_control=!0/);
-        assert.match(patchedVisibilityFile, /navigator\.userAgent\.includes\(`Linux`\)/);
+        assert.match(patchedAppMainFile, /navigator\.userAgent\.includes\(`Linux`\)/);
         assert.match(patchedRemoteConnectionsSettingsFile, /codexLinuxRemoteControlSettingsTabs/);
         assert.match(patchedRemoteConnectionsSettingsFile, /codexLinuxRemoteControlResetMobileSetupAfterRevoke/);
         assert.match(patchedRemoteConnectionsSettingsFile, /codexLinuxRemoteConnectionsRefreshNow/);

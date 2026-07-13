@@ -2872,10 +2872,13 @@ exit 1
 
         let bin_dir = temp.path().join("bin");
         fs::create_dir_all(&bin_dir)?;
+        let chmod_path = find_in_path("chmod", &command_path_env())
+            .context("chmod is required for the CLI preflight test fixture")?;
+        std::os::unix::fs::symlink(chmod_path, bin_dir.join("chmod"))?;
         let codex_path = bin_dir.join("codex");
         write_executable_script(
             &bin_dir.join("npm"),
-            "#!/bin/sh\nif [ \"$1\" = \"view\" ]; then\n  echo '0.42.1'\n  exit 0\nfi\nif [ \"$1\" = \"install\" ]; then\n  printf '%s\\n' '#!/bin/sh' \"echo 'version probe failed' >&2\" 'exit 43' > \"$FAKE_CODEX_PATH\"\n  /bin/chmod +x \"$FAKE_CODEX_PATH\"\n  exit 0\nfi\nexit 1\n",
+            "#!/bin/sh\nif [ \"$1\" = \"view\" ]; then\n  echo '0.42.1'\n  exit 0\nfi\nif [ \"$1\" = \"install\" ]; then\n  printf '%s\\n' '#!/bin/sh' \"echo 'version probe failed' >&2\" 'exit 43' > \"$FAKE_CODEX_PATH\"\n  chmod +x \"$FAKE_CODEX_PATH\"\n  exit 0\nfi\nexit 1\n",
         )?;
 
         let _restore_env = configure_cli_test_env(temp.path(), [bin_dir])?;
