@@ -1,5 +1,9 @@
 "use strict";
 
+const {
+  findMatchingBrace,
+} = require("../../scripts/patches/lib/minified-js.js");
+
 const JS_IDENT = "[A-Za-z_$][\\w$]*";
 const PATCH_MARKER = "codexLinuxGitPluginUpdateV1";
 const COMPONENT_NAME = "codexLinuxGitPluginUpdateButton";
@@ -27,7 +31,7 @@ function pluginUpdateRuntimeSource({ bridgeVar, jsxVar, reactVar }) {
   ].join("");
 }
 
-function findPluginDetailBinding(source) {
+function findLegacyPluginDetailBinding(source) {
   const headerPattern = new RegExp(
     `function (${JS_IDENT})\\(\\{hostId:(${JS_IDENT}),pluginName:(${JS_IDENT}),` +
       `marketplacePath:(${JS_IDENT}),[^}]*\\}=\\{\\}\\)\\{`,
@@ -96,8 +100,122 @@ function findPluginDetailBinding(source) {
     refreshVar: refreshMatch[1],
     refetchVar,
     stateAnchor: reactMatch[0],
+    stateReplacement:
+      `${reactMatch[0]},[${PARENT_BUSY_STATE},${PARENT_BUSY_SETTER}]=` +
+      `(0,${reactMatch[1]}.useState)(!1)`,
     start,
   };
+}
+
+function findReactCompiledPluginDetailBinding(source) {
+  const functionPattern = new RegExp(`function (${JS_IDENT})\\((${JS_IDENT})\\)\\{`, "g");
+  const actionPattern = new RegExp(
+    `isUninstalling:(${JS_IDENT}),isUpdatingEnabled:(${JS_IDENT}),shareActions:null`,
+  );
+  const candidates = [];
+  let functionMatch;
+  while ((functionMatch = functionPattern.exec(source)) != null) {
+    const openIndex = functionMatch.index + functionMatch[0].length - 1;
+    const closeIndex = findMatchingBrace(source, openIndex);
+    if (closeIndex === -1) {
+      continue;
+    }
+    const block = source.slice(functionMatch.index, closeIndex + 1);
+    const actionMatch = block.match(actionPattern);
+    if (actionMatch != null && block.includes("summary.installed")) {
+      candidates.push({
+        actionMatch,
+        block,
+        end: closeIndex + 1,
+        header: functionMatch[0],
+        start: functionMatch.index,
+      });
+    }
+  }
+  if (candidates.length !== 1) {
+    return null;
+  }
+
+  const { actionMatch, block, end, header, start } = candidates[0];
+  const propsMatch = block.match(
+    new RegExp(
+      `\\{hostId:(${JS_IDENT}),pluginName:(${JS_IDENT}),marketplacePath:(${JS_IDENT}),[^}]*\\}=` +
+        `${JS_IDENT}===void 0\\?\\{\\}:${JS_IDENT}`,
+    ),
+  );
+  const reactMatch = block.match(new RegExp(`\\(0,(${JS_IDENT})\\.useState\\)\\(`));
+  const jsxMatch = block.match(
+    new RegExp(`\\(0,(${JS_IDENT})\\.jsx\\)\\((${JS_IDENT}),\\{blockedReason:`),
+  );
+  const bridgeMatch = source.match(
+    new RegExp("await (" + JS_IDENT + ")\\(`read-plugin`,"),
+  );
+  const pluginMatch = block.match(new RegExp(`plugin:(${JS_IDENT}),refetch:(${JS_IDENT})`));
+  if (
+    propsMatch == null ||
+    reactMatch == null ||
+    jsxMatch == null ||
+    bridgeMatch == null ||
+    pluginMatch == null
+  ) {
+    return null;
+  }
+
+  const hostIdMatch = block.match(
+    new RegExp(`,(${JS_IDENT})=${propsMatch[1]}\\?\\?[^,]+`),
+  );
+  const directMarketplacePathMatch = block.match(
+    new RegExp(`directMarketplacePath:(${JS_IDENT})`),
+  );
+  const marketplacePathMatch = directMarketplacePathMatch == null
+    ? null
+    : block.match(
+      new RegExp(`,(${JS_IDENT})=${directMarketplacePathMatch[1]}\\?\\?[^,]+`),
+    );
+  if (hostIdMatch == null || marketplacePathMatch == null) {
+    return null;
+  }
+
+  const hostIdVar = hostIdMatch[1];
+  const refetchVar = pluginMatch[2];
+  const refreshAsyncMatch = block.match(
+    new RegExp(
+      `(${JS_IDENT})=async\\(\\)=>\\{await [\\s\\S]{0,600}?hostId:${hostIdVar},` +
+        `[\\s\\S]{0,600}?refetchPluginDetail:${refetchVar}\\}\\)\\}`,
+    ),
+  );
+  const refreshEventMatch = refreshAsyncMatch == null
+    ? null
+    : block.match(
+      new RegExp(
+        `(${JS_IDENT})=\\(0,${reactMatch[1]}\\.useEffectEvent\\)\\(${refreshAsyncMatch[1]}\\)`,
+      ),
+    );
+  if (refreshEventMatch == null) {
+    return null;
+  }
+
+  return {
+    block,
+    bridgeVar: bridgeMatch[1],
+    busyVars: [actionMatch[1], actionMatch[2]],
+    end,
+    hostIdVar,
+    jsxVar: jsxMatch[1],
+    marketplacePathVar: marketplacePathMatch[1],
+    pluginVar: pluginMatch[1],
+    reactVar: reactMatch[1],
+    refreshVar: refreshEventMatch[1],
+    stateAnchor: header,
+    stateReplacement:
+      `${header}let [${PARENT_BUSY_STATE},${PARENT_BUSY_SETTER}]=` +
+      `(0,${reactMatch[1]}.useState)(!1);`,
+    start,
+  };
+}
+
+function findPluginDetailBinding(source) {
+  return findLegacyPluginDetailBinding(source) ?? findReactCompiledPluginDetailBinding(source);
 }
 
 function applyPluginUpdateButtonPatch(source) {
@@ -129,6 +247,7 @@ function applyPluginUpdateButtonPatch(source) {
     reactVar,
     refreshVar,
     stateAnchor,
+    stateReplacement,
     start,
   } = binding;
   const anchor =
@@ -148,10 +267,9 @@ function applyPluginUpdateButtonPatch(source) {
     `marketplacePath:${pluginVar}.marketplacePath??${marketplacePathVar},` +
     `pluginName:${pluginVar}.summary.name,pluginSource:${pluginVar}.summary.source,` +
     `onBusyChange:${PARENT_BUSY_SETTER},onUpdated:${refreshVar}})`;
-  const state =
-    `${stateAnchor},[${PARENT_BUSY_STATE},${PARENT_BUSY_SETTER}]=` +
-    `(0,${reactVar}.useState)(!1)`;
-  const patchedBlock = block.replace(stateAnchor, state).replace(anchor, action);
+  const patchedBlock = block
+    .replace(stateAnchor, stateReplacement)
+    .replace(anchor, action);
   const runtime = pluginUpdateRuntimeSource({ bridgeVar, jsxVar, reactVar });
   return `${source.slice(0, start)}${runtime}${patchedBlock}${source.slice(end)}`;
 }
@@ -165,6 +283,7 @@ const descriptors = [
     pattern: /^plugin-detail-page-.*\.js$/,
     missingDescription: "plugin detail webview bundle",
     skipDescription: "Git plugin update button patch",
+    requiredMarkers: [PATCH_MARKER],
     apply: applyPluginUpdateButtonPatch,
   },
 ];

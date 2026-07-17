@@ -35,6 +35,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- Webview descriptors can now require fixed output markers. A matching filename
+  with no recognized patch output is reported as drift instead of
+  `already-applied`, and multi-asset edits are committed only after every
+  required marker appears exactly once.
+- The opt-in Computer Use UI now patches the Electron 42 settings-card query
+  shape and the rechunked plugin-detail install flow. Both paths carry verified
+  fixed markers, remain atomic and idempotent, and backfill markers onto a
+  complete structurally patched asset from an older build.
+- Computer Use readiness now recognizes the installed `ydotool 1.0.4` command
+  set by checking its actual raw-key and absolute-pointer capabilities instead
+  of requiring the unrelated `stdin` subcommand.
+- Private upstream-sync issue automation now mutates only issues carrying its
+  hidden ownership marker and never changes a `workflow: manual only` issue.
+  New automation-owned issues receive the complete repository label set.
+- The current Electron 42 upstream Linux tray factory now obeys the existing
+  `codex-linux-system-tray-enabled` setting at startup instead of creating the
+  tray unconditionally. The setting remains fail-open when the Linux helper is
+  absent, preserving compatibility with older generated bundles.
+- The opt-in Git plugin update and Skill invocation-policy controls now match
+  the current Electron 42 React-compiled plugin detail page and split composer
+  chunks. The Nix payload acceptance check verifies exactly one patched Skill
+  trigger registration, trigger parser, composer filter, and combined plugin
+  detail asset in the package it builds.
+- The updater daemon now detects that a package upgrade replaced its binary
+  on disk and exits with a nonzero status so systemd's `Restart=on-failure`
+  relaunches it on the new binary. Previously a running daemon survived every
+  upgrade and kept staging rebuild workspaces with outdated logic, failing
+  each periodic update until the next reboot.
+- Launcher startup no longer requires Python's pidfd wrappers for normal
+  launcher lock acquire and release. Pidfd remains reserved for the
+  identity-verified stale Electron termination path.
 - Approval notifications now preserve the upstream Approve, Approve for
   session, and Decline actions on Linux. A small freedesktop notification
   bridge forwards the action and close signals that Electron's Linux

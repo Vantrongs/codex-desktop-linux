@@ -17,6 +17,8 @@ const {
 const {
   COMPOSER_FILTER_NAME,
   COMPOSER_PATCH_MARKER,
+  COMPOSER_REGISTRATION_PATCH_MARKER,
+  COMPOSER_TRIGGER_PATCH_MARKER,
   COMPONENT_NAME,
   PATCH_MARKER,
   applySkillInvocationComposerPatch,
@@ -60,6 +62,26 @@ function composerFixture() {
     "function PG(e){let t=(0,AG.c)(60),n=e.suggestions;let j=n.ui?.query??``,M;",
     "M=(0,NG.jsx)(XW,{className:d,query:j,onUpdateSelectedMention:n.setSelectedMention,",
     "onAddMention:n.addMention,onRequestClose:n.closeAutocomplete})}",
+  ].join("");
+}
+
+function currentComposerRegistrationUiFixture() {
+  return [
+    "function wa(e=null,{enableSkillMentions:a=!0,enableSlashCommands:o=!0}={}){",
+    "let u=o?(typeof o==`boolean`?{}:o).triggers??[`/`]:[],d={...a?{$:`skill-mention`}:{},...Object.fromEntries(u.map(e=>[e,`slash-command`]))}}",
+    "function oo(e){let t=(0,mo.c)(33),{className:n,query:r,onUpdateSelectedMention:a,onAddMention:o,onRequestClose:s,placement:c,cwd:l,roots:u,hostId:d,isHomeMenu:f,chromeVariant:p,keyboardEventTarget:m}=e,",
+    "x={isLoading:!1},S=apps,{skills:C,isLoading:w}=data,T=roots,M=list([...(0,go.default)(C.filter(e=>e.enabled&&Yn(e,T)).map(mapSkill),sortSkill),...S==null?[]:S.map(e=>mapApp(e))],r),",
+    "N=M.length===0&&(w||S==null&&x.isLoading),L=`composer.skillMentionList.noResults`;return{M,N,L}}",
+    "function bo(e){let t=(0,So.c)(61),n=e.autocomplete;if(!n.ui?.active)return null;let M=n.ui?.query??``,P;",
+    "P=(0,To.jsx)(oo,{className:f,query:M,onUpdateSelectedMention:n.setSelectedMention,onAddMention:n.addMention,onRequestClose:n.closeAutocomplete})}",
+  ].join("");
+}
+
+function currentComposerTriggerFixture() {
+  return [
+    "function U(e,t){let n=e.nodeBefore?.text,r=n?.match(K),o=r?.[1],s=r?.[2];",
+    "if(s==null||o!==`/`&&o!==`@`&&o!==`$`)return null;return{kind:t[o],query:s,trigger:o}}",
+    "var K=/(?:^|\\s)([/@$])([\\p{L}\\p{N}\\p{M}.:_/\\\\-]*)$/u;",
   ].join("");
 }
 
@@ -192,6 +214,12 @@ test("descriptors target the Skill card and main composer chunks", () => {
     ),
     true,
   );
+  assert.equal(
+    descriptors[1].pattern.test(
+      "app-initial~artifact-tab-content.electron~app-main~appgen-settings-page~page~current.js",
+    ),
+    true,
+  );
   assert.equal(descriptors[1].pattern.test("plugin-detail-page-DmxssFl8.js"), false);
 });
 
@@ -202,6 +230,8 @@ test("composer patch adds strict $/! routing atomically and idempotently", () =>
   assert.notEqual(patched, source);
   assert.equal(applySkillInvocationComposerPatch(patched), patched);
   assert.match(patched, new RegExp(COMPOSER_PATCH_MARKER));
+  assert.match(patched, new RegExp(COMPOSER_REGISTRATION_PATCH_MARKER));
+  assert.match(patched, new RegExp(COMPOSER_TRIGGER_PATCH_MARKER));
   assert.match(patched, /\$:`skill-mention`,"!":`skill-mention`/);
   assert.match(patched, /\(\[\/@\$!\]\)/);
   assert.match(patched, /o!==`\$`&&o!==`!`/);
@@ -229,6 +259,20 @@ test("composer patch is byte-preserving when a required anchor drifts", () => {
   assert.deepEqual(warnings, [
     "WARN: Could not resolve the current manual-only loading state (matches: 0) - skipping Skill invocation policy patch",
   ]);
+});
+
+test("composer patch supports the current split trigger and Skill menu chunks", () => {
+  const registrationUi = applySkillInvocationComposerPatch(currentComposerRegistrationUiFixture());
+  const trigger = applySkillInvocationComposerPatch(currentComposerTriggerFixture());
+
+  assert.match(registrationUi, new RegExp(COMPOSER_REGISTRATION_PATCH_MARKER));
+  assert.match(registrationUi, new RegExp(COMPOSER_PATCH_MARKER));
+  assert.doesNotMatch(registrationUi, new RegExp(COMPOSER_TRIGGER_PATCH_MARKER));
+  assert.match(registrationUi, /invocationTrigger:M\[0\],query:M\.slice\(1\)/);
+  assert.match(trigger, new RegExp(COMPOSER_TRIGGER_PATCH_MARKER));
+  assert.doesNotMatch(trigger, new RegExp(COMPOSER_PATCH_MARKER));
+  assert.equal(applySkillInvocationComposerPatch(registrationUi), registrationUi);
+  assert.equal(applySkillInvocationComposerPatch(trigger), trigger);
 });
 
 test("invocation trigger strictly separates automatic and manual-only Skills", () => {
@@ -443,5 +487,35 @@ test("enabled descriptor patches a matching extracted webview asset", () => {
     assert.match(patched, /allowImplicitInvocation/);
     assert.match(patchedComposer, new RegExp(COMPOSER_PATCH_MARKER));
     assert.equal(fs.readFileSync(decoyPath, "utf8"), "console.log(`decoy`);");
+  });
+});
+
+test("enabled descriptor patches both current split composer chunks", () => {
+  withTempDir((extractedDir) => {
+    const assetsDir = path.join(extractedDir, "webview", "assets");
+    const uiPath = path.join(
+      assetsDir,
+      "app-initial~artifact-tab-content.electron~app-main~appgen-settings-page~current.js",
+    );
+    const triggerPath = path.join(
+      assetsDir,
+      "app-initial~artifact-tab-content.electron~app-main~pull-request-code-review~new-thread-pane~current.js",
+    );
+    fs.mkdirSync(assetsDir, { recursive: true });
+    fs.writeFileSync(uiPath, currentComposerRegistrationUiFixture());
+    fs.writeFileSync(triggerPath, currentComposerTriggerFixture());
+
+    applyWebviewAssetPatchDescriptors(
+      extractedDir,
+      normalizePatchDescriptors([descriptors[1]]),
+      {},
+      null,
+    );
+
+    const patchedUi = fs.readFileSync(uiPath, "utf8");
+    const patchedTrigger = fs.readFileSync(triggerPath, "utf8");
+    assert.match(patchedUi, new RegExp(COMPOSER_REGISTRATION_PATCH_MARKER));
+    assert.match(patchedUi, new RegExp(COMPOSER_PATCH_MARKER));
+    assert.match(patchedTrigger, new RegExp(COMPOSER_TRIGGER_PATCH_MARKER));
   });
 });

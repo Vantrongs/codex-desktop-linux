@@ -71,6 +71,21 @@ function normalizeDescriptor(descriptor, sourcePath = null, index = 0) {
       `Patch descriptor '${id}' has unsupported phase '${normalized.phase}' in ${sourcePath ?? "inline descriptor"}`,
     );
   }
+  if (normalized.requiredMarkers != null) {
+    if (normalized.phase !== PHASE_WEBVIEW_ASSET) {
+      throw new Error(`Patch descriptor '${id}' may only define requiredMarkers for webview assets`);
+    }
+    if (
+      !Array.isArray(normalized.requiredMarkers) ||
+      normalized.requiredMarkers.length === 0 ||
+      normalized.requiredMarkers.some((marker) => typeof marker !== "string" || marker.length === 0) ||
+      new Set(normalized.requiredMarkers).size !== normalized.requiredMarkers.length
+    ) {
+      throw new Error(
+        `Webview asset patch '${id}' requiredMarkers must be a non-empty array of unique strings`,
+      );
+    }
+  }
   return normalized;
 }
 
@@ -304,6 +319,21 @@ function recordAssetDescriptorPatch(report, descriptor, patchResult, warnings, c
     );
     return;
   }
+  if (patchResult.verified === false) {
+    recordDescriptorPatch(
+      report,
+      descriptor,
+      descriptorFailureStatus(descriptor),
+      warnings[0] ?? "required webview patch markers were not verified",
+      context,
+      {
+        ...(strategyMetadata(strategies) ?? {}),
+        markerCounts: patchResult.markerCounts,
+        attemptedChanged: patchResult.attemptedChanged,
+      },
+    );
+    return;
+  }
   recordDescriptorPatch(
     report,
     descriptor,
@@ -331,9 +361,20 @@ function applyWebviewAssetPatchDescriptors(extractedDir, descriptors, context, r
     }
     const missingWarning = descriptor.missingWarning ??
       defaultWebviewMissingWarning(extractedDir, descriptor);
+    const verificationWarnMessage =
+      `WARN: Webview asset patch '${descriptor.id}' did not produce exactly one copy of each required marker — skipping ${descriptor.skipDescription ?? descriptor.id}`;
     const { value: result, warnings, error, strategies } = runDescriptorApply(
       descriptor,
-      () => patchAssetFiles(extractedDir, pattern, (source) => descriptor.apply(source, context), missingWarning),
+      () => patchAssetFiles(
+        extractedDir,
+        pattern,
+        (source) => descriptor.apply(source, context),
+        missingWarning,
+        {
+          requiredMarkers: descriptor.requiredMarkers,
+          verificationWarnMessage,
+        },
+      ),
       { matched: 0, changed: 0 },
     );
     context.reportWarnings = warnings;

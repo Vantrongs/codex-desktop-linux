@@ -58,7 +58,10 @@ nix build .#checks.x86_64-linux.nix-linux-features-evaluation --no-link
 nix build .#checks.x86_64-linux.nix-plugin-skill-feature-payload --no-link
 ```
 
-The feature patches are fail-soft and idempotent. If the current upstream Skill
-card or composer bundle no longer matches all required anchors, the affected
-asset is left unchanged and a warning is reported instead of applying a partial
-UI change.
+The feature patches are fail-soft and idempotent. Current Electron 42 builds
+split Skill trigger parsing from the trigger registration, menu filtering, and
+composer call site, so the patch handles those generated chunks independently.
+Within each affected asset, all required anchors must match or that asset is
+left unchanged and a warning is reported. The dedicated payload Nix check then
+requires exactly one registration marker, parser marker, composer-filter marker,
+and combined Skill-card/plugin-update marker in the package it builds.

@@ -217,14 +217,19 @@ The Home Manager and NixOS modules accept these feature IDs through
 | Feature ID | Purpose |
 | --- | --- |
 | `appshots` | Linux AppShots capture integration |
+| `codex-wrapper-updater` | Separate in-app update path for this Linux wrapper and its feature set |
 | `frameless-titlebar` | Hide app-provided titlebar controls for compositor-managed decorations |
+| `global-dictation` | Global dictation shortcuts through X11 helpers or Wayland portals |
 | `mcp-helper-reaper` | Cleanup for stale configured MCP helper processes |
 | `node-repl-reaper` | Cleanup for leaked Browser Use `node_repl` helpers |
 | `open-target-discovery` | Linux terminal, editor, and file-manager discovery |
 | `persistent-status-panel` | Persistent `/status` panel state |
+| `pet-overlay` | Compositor-aware avatar window behavior for a desktop pet overlay |
 | `plugin-update-button` | Update an installed Git-sourced plugin using source refresh plus atomic reinstall |
+| `remote-control-ui` | Open the upstream Remote Control UI gates on Linux without faking backend state |
 | `remote-mobile-control` | Experimental Linux Remote host and outbound-control adaptation |
 | `skill-invocation-policy` | Separate automatic/manual-only policy control and `$`/`!` Skill menus; requires a compatible CLI |
+| `ui-tweaks` | Optional shared UI customizations with declarative feature settings |
 
 The list is validated during module evaluation, then deduplicated and sorted so
 equivalent configurations produce the same derivation. Features that are not in
@@ -290,5 +295,8 @@ Users can opt in locally with:
 cachix use codex-desktop-linux
 ```
 
-The scheduled `Populate Cachix` workflow builds the default package,
-feature-specific package variants, and `.#installer`.
+When a merge to `main` changes the pinned `Codex.dmg` hash, the `Populate
+Cachix` workflow builds the default package, feature-specific package variants,
+the watchdog feature check, and `.#installer`. It uploads and garbage-collects
+each output before starting the next one so the hosted runner does not retain
+every large app variant at once.

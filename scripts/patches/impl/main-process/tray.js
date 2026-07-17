@@ -6,6 +6,11 @@ function applyLinuxTrayPatch(currentSource, iconPathExpression) {
   let patchedSource = currentSource;
   void iconPathExpression;
 
+  const hasCurrentLinuxTrayFactory =
+    patchedSource.includes("if(process.platform===`linux`){") &&
+    patchedSource.includes("updatePersistentTrayMenu(){process.platform===`linux`") &&
+    /new [A-Za-z_$][\w$]*\.Tray\(/.test(patchedSource);
+
   const closeToTrayPattern =
     /if\(\(process\.platform===`win32`\|\|process\.platform===`linux`\)&&!this\.isAppQuitting&&this\.options\.canHideLastWindowToTray\?\.\(\)===!0&&!([A-Za-z_$][\w$]*)\)\{([A-Za-z_$][\w$]*)\.preventDefault\(\),([A-Za-z_$][\w$]*)\.hide\(\);return\}/;
   const guardedCloseToTrayPattern =
@@ -27,11 +32,7 @@ function applyLinuxTrayPatch(currentSource, iconPathExpression) {
     const trayConstructorPattern =
       /([A-Za-z_$][\w$]*)=new ([A-Za-z_$][\w$]*)\.Tray\(([^;)]+)\)/;
     const match = patchedSource.match(trayConstructorPattern);
-    if (
-      match == null ||
-      !patchedSource.includes("if(process.platform===`linux`){") ||
-      !patchedSource.includes("updatePersistentTrayMenu(){process.platform===`linux`")
-    ) {
+    if (match == null || !hasCurrentLinuxTrayFactory) {
       console.warn("WARN: Could not find current Linux tray factory — skipping Linux tray teardown registration patch");
       return currentSource;
     }
@@ -39,6 +40,24 @@ function applyLinuxTrayPatch(currentSource, iconPathExpression) {
     patchedSource = patchedSource.replace(
       trayConstructorPattern,
       `${trayVar}=typeof codexLinuxRegisterTray===\`function\`?codexLinuxRegisterTray(new ${electronVar}.Tray(${constructorArgs})):new ${electronVar}.Tray(${constructorArgs})`,
+    );
+  }
+
+  const gatedTrayStartupPattern =
+    /\([A-Za-z_$][\w$]*\|\|process\.platform===`linux`&&\(typeof codexLinuxIsTrayEnabled!==`function`\|\|codexLinuxIsTrayEnabled\(\)\)\)&&[A-Za-z_$][\w$]*\(\);/;
+  if (!gatedTrayStartupPattern.test(patchedSource)) {
+    const trayStartupPattern =
+      /\(([A-Za-z_$][\w$]*)\|\|process\.platform===`linux`\)&&([A-Za-z_$][\w$]*)\(\);/g;
+    const startupMatches = [...patchedSource.matchAll(trayStartupPattern)];
+    if (!hasCurrentLinuxTrayFactory || startupMatches.length !== 1) {
+      console.warn("WARN: Could not resolve the current Linux tray startup — skipping Linux tray setting gate patch");
+      return currentSource;
+    }
+    const [startupMatch] = startupMatches;
+    const [, windowsTrayEnabledVar, startTrayVar] = startupMatch;
+    patchedSource = patchedSource.replace(
+      startupMatch[0],
+      `(${windowsTrayEnabledVar}||process.platform===\`linux\`&&(typeof codexLinuxIsTrayEnabled!==\`function\`||codexLinuxIsTrayEnabled()))&&${startTrayVar}();`,
     );
   }
 

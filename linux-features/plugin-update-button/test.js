@@ -32,6 +32,17 @@ function pluginDetailFixture() {
   ].join("");
 }
 
+function currentPluginDetailFixture() {
+  return [
+    "async function ka({hostId:e,...t}){let{plugin:n}=await ve(`read-plugin`,{hostId:e??`local`,...t});return n}",
+    "function Gl(e){let t=(0,du.c)(387),{hostId:a,pluginName:o,marketplacePath:s,parentPage:f}=e===void 0?{}:e,m=f===void 0?`plugins`:f,[k,A]=(0,fu.useState)(null),B=a??`local`,",
+    "{directMarketplacePath:ue}=Fe({explicitMarketplacePath:s}),U=ue??fallbackPath,{plugin:K,refetch:ft}=ke({hostId:B,marketplacePath:U,pluginName:o}),",
+    "Vt=async()=>{await uu({hostId:B,invalidateQueriesAndBroadcast:O,marketplacePath:U,pluginName:o,refetchPluginDetail:ft})},Ht=(0,fu.useEffectEvent)(Vt),",
+    "xi=K!=null&&In===K.summary.id,Si=K!=null&&Nn===K.summary.id;let na=K!=null?(0,$.jsx)(ts,{blockedReason:null,isInstalled:K.summary.installed,isUninstalling:xi,isUpdatingEnabled:Si,shareActions:null,onInstall:()=>{}}):null;return na}",
+    "function eu(){}",
+  ].join("");
+}
+
 function withTempDir(callback) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "plugin-update-button-"));
   try {
@@ -201,6 +212,18 @@ test("patch injects one Git update action and is idempotent", () => {
     patched,
     /onBusyChange:setCodexLinuxGitPluginUpdateBusyV1,onUpdated:It/,
   );
+});
+
+test("patches the Electron 42 React-compiled plugin detail component", () => {
+  const source = currentPluginDetailFixture();
+  const patched = applyPluginUpdateButtonPatch(source);
+
+  assert.notEqual(patched, source);
+  assert.equal(applyPluginUpdateButtonPatch(patched), patched);
+  assert.match(patched, new RegExp(PATCH_MARKER));
+  assert.match(patched, /shareActions:\(0,\$\.jsx\)\(codexLinuxGitPluginUpdateButton/);
+  assert.match(patched, /marketplacePath:K\.marketplacePath\?\?U/);
+  assert.match(patched, /onBusyChange:setCodexLinuxGitPluginUpdateBusyV1,onUpdated:Ht/);
 });
 
 test("patch is fail-soft when the complete action contract is absent", () => {

@@ -30,7 +30,23 @@ function regexpTest(filenamePattern, name) {
   return filenamePattern.test(name);
 }
 
-function patchAssetFiles(extractedDir, filenamePattern, patchFn, missingWarnMessage) {
+function countOccurrences(source, marker) {
+  let count = 0;
+  let offset = 0;
+  while ((offset = source.indexOf(marker, offset)) !== -1) {
+    count += 1;
+    offset += marker.length;
+  }
+  return count;
+}
+
+function patchAssetFiles(
+  extractedDir,
+  filenamePattern,
+  patchFn,
+  missingWarnMessage,
+  options = {},
+) {
   const webviewAssetsDir = path.join(extractedDir, "webview", "assets");
   if (!fs.existsSync(webviewAssetsDir)) {
     console.warn(
@@ -50,14 +66,62 @@ function patchAssetFiles(extractedDir, filenamePattern, patchFn, missingWarnMess
   }
 
   const pendingWrites = [];
+  const patchedAssets = [];
   for (const candidate of candidates) {
     const filePath = path.join(webviewAssetsDir, candidate);
     const currentSource = fs.readFileSync(filePath, "utf8");
     const patchedSource = patchFn(currentSource);
+    patchedAssets.push(patchedSource);
     if (patchedSource !== currentSource) {
       pendingWrites.push({ filePath, patchedSource });
     }
   }
+
+  const requiredMarkers = options.requiredMarkers ?? [];
+  if (requiredMarkers.length > 0) {
+    if (
+      !Array.isArray(requiredMarkers) ||
+      requiredMarkers.some((marker) => typeof marker !== "string" || marker.length === 0)
+    ) {
+      throw new Error("requiredMarkers must be an array of non-empty strings");
+    }
+    const markerCounts = Object.fromEntries(
+      requiredMarkers.map((marker) => [
+        marker,
+        patchedAssets.reduce(
+          (count, patchedSource) => count + countOccurrences(patchedSource, marker),
+          0,
+        ),
+      ]),
+    );
+    const invalidMarkers = requiredMarkers.filter((marker) => markerCounts[marker] !== 1);
+    if (invalidMarkers.length > 0) {
+      const details = invalidMarkers
+        .map((marker) => `${marker}=${markerCounts[marker]}`)
+        .join(", ");
+      console.warn(
+        `${options.verificationWarnMessage ?? "WARN: Webview asset patch marker verification failed"} (${details})`,
+      );
+      return {
+        matched: candidates.length,
+        changed: 0,
+        attemptedChanged: pendingWrites.length,
+        verified: false,
+        markerCounts,
+      };
+    }
+
+    for (const { filePath, patchedSource } of pendingWrites) {
+      fs.writeFileSync(filePath, patchedSource, "utf8");
+    }
+    return {
+      matched: candidates.length,
+      changed: pendingWrites.length,
+      verified: true,
+      markerCounts,
+    };
+  }
+
   for (const { filePath, patchedSource } of pendingWrites) {
     fs.writeFileSync(filePath, patchedSource, "utf8");
   }

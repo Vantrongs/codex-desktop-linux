@@ -48,6 +48,11 @@ implementation code lives under `scripts/patches/impl/` by domain; generic
 helpers live under `scripts/patches/lib/`. The deleted compatibility barrels
 are intentionally not part of the architecture.
 
+Webview descriptors may declare `requiredMarkers`. Candidate edits remain
+in-memory until every declared marker occurs exactly once across the matched
+assets. A zero-change run is `already-applied` only when that marker contract is
+already present; missing or duplicate markers are reported as descriptor drift.
+
 `ciPolicy` is the single criticality axis, enforced by the patch engine —
 patches themselves never abort the build:
 

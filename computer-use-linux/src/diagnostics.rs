@@ -2,6 +2,7 @@ use crate::windowing::registry::{
     self, COSMIC_WAYLAND_BACKEND, GNOME_SHELL_EXTENSION_BACKEND, GNOME_SHELL_INTROSPECT_BACKEND,
     HYPRLAND_BACKEND, KWIN_BACKEND, NIRI_BACKEND,
 };
+use crate::ydotool;
 use schemars::JsonSchema;
 use serde::Serialize;
 use std::{
@@ -21,6 +22,7 @@ const DESKTOP_ENV_KEYS: &[&str] = &[
     "DESKTOP_SESSION",
     "DISPLAY",
     "HYPRLAND_INSTANCE_SIGNATURE",
+    "NIRI_SOCKET",
     "XAUTHORITY",
     "YDOTOOL_SOCKET",
     "XDG_SESSION_DESKTOP",
@@ -210,7 +212,7 @@ fn capability_map(
     if portals.remote_desktop.ok {
         input_backends.push("portal".to_string());
     }
-    if input.ydotool_socket.ok {
+    if input.ydotool.ok && input.ydotoold.ok && input.ydotool_socket.ok {
         input_backends.push("ydotool".to_string());
     }
 
@@ -582,8 +584,8 @@ fn windowing_report(platform: &PlatformReport) -> WindowingReport {
     );
     let cosmic_helper = backend_check(COSMIC_WAYLAND_BACKEND);
     let kwin = backend_check(KWIN_BACKEND);
-    let niri = backend_check(NIRI_BACKEND);
     let hyprland = backend_check(HYPRLAND_BACKEND);
+    let niri = backend_check(NIRI_BACKEND);
     let backends = probes
         .iter()
         .map(|probe| (probe.id.to_string(), check_from_backend_probe(probe)))
@@ -596,15 +598,15 @@ fn windowing_report(platform: &PlatformReport) -> WindowingReport {
             "A COSMIC Wayland window backend is available for list_windows, focused_window, and targeted input verification."
         } else if kwin.ok {
             "A KWin/Plasma window backend is available for list_windows, focused_window, and targeted input verification."
-        } else if niri.ok {
-            "A Niri window backend is available for list_windows, focused_window, and targeted input verification."
         } else if hyprland.ok {
             "A Hyprland window backend is available for list_windows, focused_window, and targeted input verification."
+        } else if niri.ok {
+            "A Niri window backend is available for list_windows, focused_window, and targeted input verification."
         } else {
             "A GNOME window listing backend is available for list_windows, focused_window, and targeted input verification."
         }
     } else {
-        "Window listing is unavailable or denied. Computer Use can still use screenshots, AT-SPI, and global ydotool input, but targeted window input cannot be verified. On GNOME, run setup_window_targeting to install the optional GNOME Shell extension backend. On COSMIC, ensure the bundled COSMIC helper is present and can connect to the session. On KDE/Plasma, ensure KWin exposes org.kde.KWin scripting on the session bus. On Niri, ensure niri msg -j windows works in the session. On Hyprland, ensure hyprctl is available in the session."
+        "Window listing is unavailable or denied. Computer Use can still use screenshots, AT-SPI, and global ydotool input, but targeted window input cannot be verified. On GNOME, run setup_window_targeting to install the optional GNOME Shell extension backend. On COSMIC, ensure the bundled COSMIC helper is present and can connect to the session. On KDE/Plasma, ensure KWin exposes org.kde.KWin scripting on the session bus. On Hyprland, ensure hyprctl is available in the session. On Niri, ensure NIRI_SOCKET is available or discoverable and niri msg -j windows can reach the active compositor."
     }
     .to_string();
 
@@ -634,7 +636,10 @@ fn check_from_backend_probe(probe: &registry::BackendProbe) -> Check {
 
 fn input_report() -> InputReport {
     InputReport {
-        ydotool: command_path_check("ydotool"),
+        ydotool: match ydotool::ensure_supported() {
+            Ok(detail) => Check::ok(detail),
+            Err(detail) => Check::fail(detail),
+        },
         ydotoold: process_check("ydotoold"),
         ydotool_socket: ydotool_socket_check(),
         uinput: read_write_path_check(Path::new("/dev/uinput")),
@@ -802,10 +807,6 @@ fn user_id() -> Option<String> {
         .success()
         .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
         .filter(|value| !value.is_empty())
-}
-
-fn command_path_check(command: &str) -> Check {
-    command_check("sh", &["-c", &format!("command -v {command}")])
 }
 
 fn process_check(process_name: &str) -> Check {
@@ -1159,6 +1160,11 @@ mod tests {
     }
 
     #[test]
+    fn desktop_env_hydration_includes_niri_socket() {
+        assert!(DESKTOP_ENV_KEYS.contains(&"NIRI_SOCKET"));
+    }
+
+    #[test]
     fn graphical_process_env_requires_display() {
         let with_display = HashMap::from([("DISPLAY".to_string(), ":0".to_string())]);
         let with_wayland =
@@ -1219,6 +1225,47 @@ mod tests {
         assert!(readiness.can_focus_apps);
         assert!(readiness.can_focus_windows);
         assert!(readiness.blockers.is_empty());
+    }
+
+    #[test]
+    fn capability_map_reports_niri_window_control() {
+        let platform = platform_report();
+        let portals = portal_report(Check::fail("missing"));
+        let accessibility = accessibility_report(Check::ok("bus"), Check::ok("true"));
+        let mut windowing = windowing_report(false, false);
+        windowing.niri = Check::ok("niri msg returned windows");
+        let input = input_report(false);
+
+        let capabilities = capability_map(&platform, &portals, &accessibility, &windowing, &input);
+
+        assert_eq!(capabilities.window_control, vec![NIRI_BACKEND]);
+        assert_eq!(
+            capabilities.preferred.window_control.as_deref(),
+            Some(NIRI_BACKEND)
+        );
+    }
+
+    #[test]
+    fn capability_map_rejects_incompatible_ydotool_with_live_daemon() {
+        let platform = platform_report();
+        let portals = portal_report(Check::fail("missing"));
+        let accessibility = accessibility_report(Check::ok("bus"), Check::ok("true"));
+        let windowing = windowing_report(true, true);
+        let input = input_report_parts(
+            Check::fail("unsupported legacy ydotool CLI"),
+            Check::ok("ydotoold"),
+            Check::ok("connectable socket"),
+            Check::fail("/dev/uinput: Permission denied"),
+        );
+
+        let capabilities = capability_map(&platform, &portals, &accessibility, &windowing, &input);
+        let readiness = readiness_report(&platform, &portals, &accessibility, &windowing, &input);
+
+        assert!(!capabilities
+            .input
+            .iter()
+            .any(|backend| backend == "ydotool"));
+        assert!(!readiness.can_send_development_input);
     }
 
     #[test]

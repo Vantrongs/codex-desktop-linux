@@ -47,6 +47,21 @@ function assertDescriptorBase(descriptor, phase) {
   if (!CI_POLICIES.has(ciPolicy)) {
     throw new Error(`Patch descriptor '${id}' has unsupported ciPolicy '${ciPolicy}'`);
   }
+  if (descriptor.requiredMarkers != null) {
+    if (phase !== PHASE_WEBVIEW_ASSET) {
+      throw new Error(`Patch descriptor '${id}' may only define requiredMarkers for webview assets`);
+    }
+    if (
+      !Array.isArray(descriptor.requiredMarkers) ||
+      descriptor.requiredMarkers.length === 0 ||
+      descriptor.requiredMarkers.some((marker) => typeof marker !== "string" || marker.length === 0) ||
+      new Set(descriptor.requiredMarkers).size !== descriptor.requiredMarkers.length
+    ) {
+      throw new Error(
+        `Webview asset patch '${id}' requiredMarkers must be a non-empty array of unique strings`,
+      );
+    }
+  }
   return id;
 }
 

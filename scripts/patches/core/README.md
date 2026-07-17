@@ -52,6 +52,15 @@ Use `mainBundlePatch(...)`, `webviewAssetPatch(...)`, or
 `extractedAppPatch(...)` for new descriptors. Extracted app descriptors must
 choose `extracted-app:pre-webview` or `extracted-app:post-webview` explicitly.
 
+For a webview descriptor whose filename pattern can match decoy or rechunked
+assets, declare `requiredMarkers` with fixed strings emitted by the complete
+patch. The engine evaluates every candidate in memory and writes none of them
+unless each marker occurs exactly once across the final candidate set. This is
+also the evidence used to distinguish `already-applied` from a matching asset
+that the patch does not recognize. Patch implementations must backfill a fixed
+marker when they recognize a complete structurally patched state from an older
+build.
+
 Omit `appliesTo` for all Linux builds. Use build-time target filters only when
 the patch should not be present in every Linux artifact; prefer runtime checks
 inside injected code for desktop/session details that can change after install.

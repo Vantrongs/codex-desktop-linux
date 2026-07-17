@@ -3,6 +3,8 @@
 const JS_IDENT = "[A-Za-z_$][\\w$]*";
 const PATCH_MARKER = "codexLinuxSkillInvocationPolicyV1";
 const COMPOSER_PATCH_MARKER = "codexLinuxManualSkillComposerV1";
+const COMPOSER_REGISTRATION_PATCH_MARKER = "codexLinuxManualSkillRegistrationV1";
+const COMPOSER_TRIGGER_PATCH_MARKER = "codexLinuxManualSkillTriggerV1";
 const COMPOSER_FILTER_NAME = "codexLinuxSkillMatchesInvocationTrigger";
 const COMPONENT_NAME = "codexLinuxSkillInvocationPolicyButton";
 
@@ -208,67 +210,84 @@ function applySkillInvocationPolicyPatch(source) {
   return `${source.slice(0, start)}${runtime}${patchedBlock}${source.slice(end)}`;
 }
 
-function applySkillInvocationComposerPatch(source) {
-  if (source.includes(COMPOSER_PATCH_MARKER)) {
+function replacePatternExactlyOnce(source, pattern, replacement, description) {
+  const matches = [...source.matchAll(new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`))];
+  if (matches.length !== 1) {
+    warn(`Could not resolve the current ${description} (matches: ${matches.length})`);
+    return null;
+  }
+  return source.replace(pattern, () => replacement);
+}
+
+function findFunctionBlockContaining(source, needle) {
+  const needleIndex = source.indexOf(needle);
+  if (needleIndex < 0) {
+    return null;
+  }
+
+  const headerPattern = new RegExp(`function (${JS_IDENT})\\(e\\)\\{`, "g");
+  let header = null;
+  for (const match of source.matchAll(headerPattern)) {
+    if (match.index > needleIndex) {
+      break;
+    }
+    header = match;
+  }
+  if (header == null) {
+    return null;
+  }
+
+  const start = header.index;
+  const bodyStart = start + header[0].length - 1;
+  let depth = 0;
+  let quote = null;
+  let escaped = false;
+  for (let index = bodyStart; index < source.length; index += 1) {
+    const char = source[index];
+    if (quote != null) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === "`" || char === '"' || char === "'") {
+      quote = char;
+    } else if (char === "{") {
+      depth += 1;
+    } else if (char === "}" && --depth === 0) {
+      return {
+        block: source.slice(start, index + 1),
+        end: index + 1,
+        name: header[1],
+        start,
+      };
+    }
+  }
+  return null;
+}
+
+function applySkillInvocationComposerTriggerPatch(source) {
+  if (source.includes(COMPOSER_TRIGGER_PATCH_MARKER)) {
     return source;
   }
-  if (
-    !source.includes("composer.skillMentionList.noResults") ||
-    !source.includes("`skill-mention`")
-  ) {
+  if (!source.includes("nodeBefore?.text") || !source.includes("[/@$]")) {
     return source;
   }
 
   const replacements = [
     [
-      '{className:n,query:r,onUpdateSelectedMention:i,onAddMention:a,onRequestClose:o,cwd:s,roots:l,hostId:u,isHomeMenu:d,chromeVariant:f,keyboardEventTarget:p}=e',
-      '{className:n,invocationTrigger:codexLinuxInvocationTrigger,query:r,onUpdateSelectedMention:i,onAddMention:a,onRequestClose:o,cwd:s,roots:l,hostId:u,isHomeMenu:d,chromeVariant:f,keyboardEventTarget:p}=e',
-      "Skill mention menu props",
-    ],
-    [
-      '...a?{$:`skill-mention`}:{},',
-      '...a?{$:`skill-mention`,"!":`skill-mention`}:{},',
-      "composer trigger map",
-    ],
-    [
-      "ZB=/(?:^|\\s)([/@$])([\\p{L}\\p{N}\\p{M}.:_/\\\\-]*)$/u",
-      "ZB=/(?:^|\\s)([/@$!])([\\p{L}\\p{N}\\p{M}.:_/\\\\-]*)$/u",
+      "/(?:^|\\s)([/@$])([\\p{L}\\p{N}\\p{M}.:_/\\\\-]*)$/u",
+      `/*${COMPOSER_TRIGGER_PATCH_MARKER}*//(?:^|\\s)([/@$!])([\\p{L}\\p{N}\\p{M}.:_/\\\\-]*)$/u`,
       "composer trigger parser",
     ],
     [
       's==null||o!==`/`&&o!==`@`&&o!==`$`',
       's==null||o!==`/`&&o!==`@`&&o!==`$`&&o!==`!`',
       "composer trigger validation",
-    ],
-    [
-      'let j=n.ui?.query??``,',
-      'let j=`${n.ui?.trigger??`$`}${n.ui?.query??``}`,',
-      "composer trigger cache dependency",
-    ],
-    [
-      '(0,NG.jsx)(XW,{className:d,query:j,onUpdateSelectedMention:',
-      '(0,NG.jsx)(XW,{className:d,invocationTrigger:j[0],query:j.slice(1),onUpdateSelectedMention:',
-      "Skill mention menu call",
-    ],
-    [
-      'x.filter(e=>e.enabled&&Dz(e,C))',
-      `x.filter(e=>${COMPOSER_FILTER_NAME}(e,codexLinuxInvocationTrigger)&&Dz(e,C))`,
-      "Skill invocation-policy filter",
-    ],
-    [
-      '...b==null?[]:b.map(e=>',
-      '...codexLinuxInvocationTrigger===`!`?[]:b==null?[]:b.map(e=>',
-      "manual-only app exclusion",
-    ],
-    [
-      'k=O.length===0&&(S||b==null&&y.isLoading),',
-      'k=O.length===0&&(S||codexLinuxInvocationTrigger!==`!`&&b==null&&y.isLoading),',
-      "manual-only loading state",
-    ],
-    [
-      'function XW(e){',
-      `${skillInvocationComposerRuntimeSource()}function XW(e){`,
-      "Skill mention menu marker",
     ],
   ];
 
@@ -286,6 +305,187 @@ function applySkillInvocationComposerPatch(source) {
   return patched;
 }
 
+function applySkillInvocationComposerRegistrationPatch(source) {
+  if (source.includes(COMPOSER_REGISTRATION_PATCH_MARKER)) {
+    return source;
+  }
+  const needle = '...a?{$:`skill-mention`}:{},';
+  if (!source.includes(needle)) {
+    return source;
+  }
+  const patched = replaceExactlyOnce(
+    source,
+    needle,
+    `/*${COMPOSER_REGISTRATION_PATCH_MARKER}*/...a?{$:\`skill-mention\`,"!":\`skill-mention\`}:{},`,
+  );
+  if (patched == null) {
+    warn(
+      `Could not resolve the current composer trigger map (matches: ${countOccurrences(source, needle)})`,
+    );
+    return source;
+  }
+  return patched;
+}
+
+function applySkillInvocationComposerUiPatch(source) {
+  if (source.includes(COMPOSER_PATCH_MARKER)) {
+    return source;
+  }
+  if (!source.includes("composer.skillMentionList.noResults")) {
+    return source;
+  }
+
+  const binding = findFunctionBlockContaining(source, "composer.skillMentionList.noResults");
+  if (binding == null) {
+    warn("Could not resolve the current Skill mention menu function");
+    return source;
+  }
+
+  const propsMatch = binding.block.match(
+    new RegExp(
+      `^function ${binding.name}\\(e\\)\\{let ${JS_IDENT}=\\(0,${JS_IDENT}\\.c\\)\\(\\d+\\),\\{([^{}]+)\\}=e,`,
+    ),
+  );
+  if (propsMatch == null) {
+    warn("Could not resolve the current Skill mention menu props");
+    return source;
+  }
+  const propVar = (name) =>
+    propsMatch[1].match(new RegExp(`(?:^|,)${name}:(${JS_IDENT})(?:,|$)`))?.[1] ?? null;
+  const classNameVar = propVar("className");
+  const queryVar = propVar("query");
+  if (classNameVar == null || queryVar == null) {
+    warn("Could not resolve the current Skill mention menu query binding");
+    return source;
+  }
+
+  let patchedBlock = replaceExactlyOnce(
+    binding.block,
+    `className:${classNameVar},query:${queryVar}`,
+    `className:${classNameVar},invocationTrigger:codexLinuxInvocationTrigger,query:${queryVar}`,
+  );
+  if (patchedBlock == null) {
+    warn("Skill mention menu invocation-trigger prop anchor was not unique");
+    return source;
+  }
+
+  const skillFilterPattern = new RegExp(
+    `(${JS_IDENT})\\.filter\\(e=>e\\.enabled&&(${JS_IDENT})\\(e,(${JS_IDENT})\\)\\)`,
+  );
+  const skillFilterMatch = patchedBlock.match(skillFilterPattern);
+  if (skillFilterMatch == null) {
+    warn("Could not resolve the current Skill invocation-policy filter");
+    return source;
+  }
+  patchedBlock = replacePatternExactlyOnce(
+    patchedBlock,
+    skillFilterPattern,
+    `${skillFilterMatch[1]}.filter(e=>${COMPOSER_FILTER_NAME}(e,codexLinuxInvocationTrigger)&&${skillFilterMatch[2]}(e,${skillFilterMatch[3]}))`,
+    "Skill invocation-policy filter",
+  );
+  if (patchedBlock == null) {
+    return source;
+  }
+
+  const appsPattern = new RegExp(`\\.\\.\\.(${JS_IDENT})==null\\?\\[\\]:\\1\\.map\\(e=>`);
+  const appsMatch = patchedBlock.match(appsPattern);
+  if (appsMatch == null) {
+    warn("Could not resolve the current manual-only app exclusion");
+    return source;
+  }
+  patchedBlock = replacePatternExactlyOnce(
+    patchedBlock,
+    appsPattern,
+    `...codexLinuxInvocationTrigger===\`!\`?[]:${appsMatch[1]}==null?[]:${appsMatch[1]}.map(e=>`,
+    "manual-only app exclusion",
+  );
+  if (patchedBlock == null) {
+    return source;
+  }
+
+  const loadingPattern = new RegExp(
+    `(${JS_IDENT})=(${JS_IDENT})\\.length===0&&\\((${JS_IDENT})\\|\\|${appsMatch[1]}==null&&(${JS_IDENT})\\.isLoading\\),`,
+  );
+  const loadingMatch = patchedBlock.match(loadingPattern);
+  if (loadingMatch == null) {
+    warn("Could not resolve the current manual-only loading state (matches: 0)");
+    return source;
+  }
+  patchedBlock = replacePatternExactlyOnce(
+    patchedBlock,
+    loadingPattern,
+    `${loadingMatch[1]}=${loadingMatch[2]}.length===0&&(${loadingMatch[3]}||codexLinuxInvocationTrigger!==\`!\`&&${appsMatch[1]}==null&&${loadingMatch[4]}.isLoading),`,
+    "manual-only loading state",
+  );
+  if (patchedBlock == null) {
+    return source;
+  }
+
+  let patched = `${source.slice(0, binding.start)}${skillInvocationComposerRuntimeSource()}${patchedBlock}${source.slice(binding.end)}`;
+  const queryPattern = new RegExp(`let (${JS_IDENT})=(${JS_IDENT})\\.ui\\?\\.query\\?\\?\`\`,`);
+  const queryMatch = patched.match(queryPattern);
+  if (queryMatch == null) {
+    warn("Could not resolve the current composer trigger cache dependency");
+    return source;
+  }
+  patched = replacePatternExactlyOnce(
+    patched,
+    queryPattern,
+    `let ${queryMatch[1]}=\`\${${queryMatch[2]}.ui?.trigger??\`$\`}\${${queryMatch[2]}.ui?.query??\`\`}\`,`,
+    "composer trigger cache dependency",
+  );
+  if (patched == null) {
+    return source;
+  }
+
+  const menuCallPattern = new RegExp(
+    `\\(0,(${JS_IDENT})\\.jsx\\)\\(${binding.name},\\{className:(${JS_IDENT}),query:${queryMatch[1]},onUpdateSelectedMention:`,
+  );
+  const menuCallMatch = patched.match(menuCallPattern);
+  if (menuCallMatch == null) {
+    warn("Could not resolve the current Skill mention menu call");
+    return source;
+  }
+  const menuCall = menuCallMatch[0];
+  const patchedCall = menuCall.replace(
+    `query:${queryMatch[1]}`,
+    `invocationTrigger:${queryMatch[1]}[0],query:${queryMatch[1]}.slice(1)`,
+  );
+  const withCall = replaceExactlyOnce(patched, menuCall, patchedCall);
+  if (withCall == null) {
+    warn("Skill mention menu call anchor was not unique");
+    return source;
+  }
+  return withCall;
+}
+
+function applySkillInvocationComposerPatch(source) {
+  const expectsRegistration = source.includes('...a?{$:`skill-mention`}:{},');
+  const expectsTrigger = source.includes("nodeBefore?.text") && source.includes("[/@$]");
+  const expectsUi = source.includes("composer.skillMentionList.noResults");
+  let patched = source;
+
+  if (expectsRegistration) {
+    patched = applySkillInvocationComposerRegistrationPatch(patched);
+    if (!patched.includes(COMPOSER_REGISTRATION_PATCH_MARKER)) {
+      return source;
+    }
+  }
+  if (expectsTrigger) {
+    patched = applySkillInvocationComposerTriggerPatch(patched);
+    if (!patched.includes(COMPOSER_TRIGGER_PATCH_MARKER)) {
+      return source;
+    }
+  }
+  if (expectsUi) {
+    patched = applySkillInvocationComposerUiPatch(patched);
+    if (!patched.includes(COMPOSER_PATCH_MARKER)) {
+      return source;
+    }
+  }
+  return patched;
+}
+
 const descriptors = [
   {
     id: "skill-invocation-policy-ui",
@@ -295,6 +495,7 @@ const descriptors = [
     pattern: /^plugin-detail-page-.*\.js$/,
     missingDescription: "shared plugin detail and installed Skill card webview bundle",
     skipDescription: "Skill invocation policy UI patch",
+    requiredMarkers: [PATCH_MARKER],
     apply: applySkillInvocationPolicyPatch,
   },
   {
@@ -302,9 +503,14 @@ const descriptors = [
     phase: "webview-asset",
     order: 20_681,
     ciPolicy: "opt-in",
-    pattern: /^app-initial~artifact-tab-content\.electron~app-main~pull-request-code-review~new-thread-pane~.*\.js$/,
-    missingDescription: "main composer Skill mention webview bundle",
+    pattern: /^app-initial~artifact-tab-content\.electron~app-main~.*\.js$/,
+    missingDescription: "main composer trigger and Skill mention webview bundles",
     skipDescription: "manual-only Skill composer menu patch",
+    requiredMarkers: [
+      COMPOSER_REGISTRATION_PATCH_MARKER,
+      COMPOSER_TRIGGER_PATCH_MARKER,
+      COMPOSER_PATCH_MARKER,
+    ],
     apply: applySkillInvocationComposerPatch,
   },
 ];
@@ -312,9 +518,14 @@ const descriptors = [
 module.exports = {
   COMPOSER_FILTER_NAME,
   COMPOSER_PATCH_MARKER,
+  COMPOSER_REGISTRATION_PATCH_MARKER,
+  COMPOSER_TRIGGER_PATCH_MARKER,
   COMPONENT_NAME,
   PATCH_MARKER,
   applySkillInvocationComposerPatch,
+  applySkillInvocationComposerRegistrationPatch,
+  applySkillInvocationComposerTriggerPatch,
+  applySkillInvocationComposerUiPatch,
   applySkillInvocationPolicyPatch,
   descriptors,
   skillInvocationComposerRuntimeSource,

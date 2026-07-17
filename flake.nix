@@ -53,6 +53,7 @@
           ];
         };
         flakeSourceCommit = self.rev or (self.dirtyRev or "");
+        flakeSourceRemote = "https://github.com/ilysenko/codex-desktop-linux.git";
         flakeSourceDateEpoch = toString (self.lastModified or 1);
         sourceRoot = pkgs.lib.cleanSourceWith {
           src = ./.;
@@ -93,20 +94,20 @@
 
         codexDmg = pkgs.fetchurl {
           url = "https://persistent.oaistatic.com/codex-app-prod/ChatGPT.dmg";
-          hash = "sha256-QONIFOdOMJQ8IJ69TalM1N41gaUsW/++K88uSI1jYcY=";
+          hash = "sha256-/0WRUJkWEgB1SScNLSjF54zsa9asIAp62l7WwDE2m4c=";
         };
 
-        codexVersion = "26.707.72221";
-        electronVersion = "42.1.0";
+        codexVersion = "26.715.21425";
+        electronVersion = "42.3.0";
         electronPlatform =
           {
             x86_64-linux = {
               arch = "x64";
-              hash = "sha256-iCBHNDqeIDxs/F05sWbqngJd0laUPg03EfhnJa0OO9k=";
+              hash = "sha256-SHpmfKanNLlYwWz/HfdNnUTSwYpszNtN1R9jAaNWxCA=";
             };
             aarch64-linux = {
               arch = "arm64";
-              hash = "sha256-HnAPfz2u95TMRSNeUcEXJmSu1JpOdze4iW3cOYv/TX0=";
+              hash = "sha256-Kjdf+XP7e93FOKT2eyFBlH6dclE6G6or6r7Cp/Zc0PA=";
             };
           }.${system} or (throw "codex-desktop-linux Nix package is not supported on ${system}");
 
@@ -117,7 +118,7 @@
 
         electronHeaders = pkgs.fetchurl {
           url = "https://artifacts.electronjs.org/headers/dist/v${electronVersion}/node-v${electronVersion}-headers.tar.gz";
-          hash = "sha256-DPwdIPJS1sKb3RSx88qjDtxkd9uT5aZiBnRCSzjc3f0=";
+          hash = "sha256-ghAJ+cGDAFDYlK755hkGywpTeyAAstm77ZmF//HV4NA=";
         };
 
         browserUseNodeReplRuntime = pkgs.fetchurl {
@@ -463,10 +464,25 @@ PY
           fi
         '';
 
+        linuxFeaturesConfigFile = config:
+          pkgs.writeText "codex-linux-features.json" (builtins.toJSON config);
+
         linuxFeaturesConfig = linuxFeatureIds:
-          pkgs.writeText "codex-linux-features.json" (builtins.toJSON {
+          linuxFeaturesConfigFile {
             enabled = linuxFeatureIds;
-          });
+          };
+
+        normalizeLinuxFeaturesConfig = config:
+          let
+            enabled = nixLinuxFeatures.normalize (config.enabled or [ ]);
+          in
+          config // {
+            inherit enabled;
+          };
+
+        watchdogLinuxFeaturesConfig = normalizeLinuxFeaturesConfig (
+          builtins.fromJSON (builtins.readFile ./scripts/ci/watchdog-linux-features.json)
+        );
 
         enabledFeatureIds = { enableComputerUseUi ? false, linuxFeatureIds ? [ ] }:
           pkgs.lib.optionals enableComputerUseUi [ "computer-use-ui" ]
@@ -478,9 +494,17 @@ PY
           in
           if featureIds == [ ] then "" else "-${pkgs.lib.concatStringsSep "-" featureIds}";
 
-        mkCodexDesktopPayload = { enableComputerUseUi ? false, linuxFeatureIds ? [ ] }:
+        mkCodexDesktopPayload = { enableComputerUseUi ? false, linuxFeatureIds ? [ ], linuxFeaturesConfigOverride ? null }:
+        let
+          effectiveLinuxFeaturesConfig =
+            if linuxFeaturesConfigOverride == null then
+              normalizeLinuxFeaturesConfig { enabled = linuxFeatureIds; }
+            else
+              normalizeLinuxFeaturesConfig linuxFeaturesConfigOverride;
+          effectiveLinuxFeatureIds = effectiveLinuxFeaturesConfig.enabled;
+        in
         pkgs.stdenv.mkDerivation {
-          pname = "codex-desktop${packageSuffix { inherit enableComputerUseUi linuxFeatureIds; }}-payload";
+          pname = "codex-desktop${packageSuffix { inherit enableComputerUseUi; linuxFeatureIds = effectiveLinuxFeatureIds; }}-payload";
           version = codexVersion;
           src = sourceRoot;
           __structuredAttrs = true;
@@ -518,6 +542,7 @@ PY
             export SOURCE_DATE_EPOCH="${flakeSourceDateEpoch}"
             ${pkgs.lib.optionalString (flakeSourceCommit != "") ''
             export CODEX_LINUX_SOURCE_COMMIT="${flakeSourceCommit}"
+            export CODEX_LINUX_SOURCE_REMOTE="${flakeSourceRemote}"
             ''}
             ${pkgs.lib.optionalString enableComputerUseUi ''
             export CODEX_LINUX_ENABLE_COMPUTER_USE_UI=1
@@ -526,7 +551,7 @@ PY
             export CXXFLAGS="''${CXXFLAGS:-} -ffile-prefix-map=$TMPDIR=/build -fdebug-prefix-map=$TMPDIR=/build -fmacro-prefix-map=$TMPDIR=/build"
             export RUSTFLAGS="''${RUSTFLAGS:-} --remap-path-prefix=$TMPDIR=/build -C link-arg=-Wl,--build-id=none"
             export CODEX_MANAGED_NODE_SOURCE="${pkgs.nodejs}"
-            export CODEX_LINUX_FEATURES_CONFIG="${linuxFeaturesConfig linuxFeatureIds}"
+            export CODEX_LINUX_FEATURES_CONFIG="${linuxFeaturesConfigFile effectiveLinuxFeaturesConfig}"
             export CODEX_ELECTRON_ZIP_SOURCE="${electronZip}"
             export CODEX_NATIVE_MODULES_SOURCE="${codexNativeModules}"
             ${pkgs.lib.optionalString (browserUseNodeRepl != null) ''
@@ -536,10 +561,10 @@ PY
             export CODEX_LINUX_COMPUTER_USE_COSMIC_SOURCE="${codexComputerUseBinaries}/bin/codex-computer-use-cosmic"
             export CODEX_CHROME_EXTENSION_HOST_SOURCE="${codexComputerUseBinaries}/bin/codex-chrome-extension-host"
             export CODEX_NOTIFICATION_ACTIONS_SOURCE="${codexNotificationActionsBinary}/bin/codex-notification-actions-linux"
-            ${pkgs.lib.optionalString (builtins.elem "mcp-helper-reaper" linuxFeatureIds) ''
+            ${pkgs.lib.optionalString (builtins.elem "mcp-helper-reaper" effectiveLinuxFeatureIds) ''
             export CODEX_MCP_HELPER_REAPER_SOURCE="${codexMcpHelperReaper}/bin/codex-mcp-helper-reaper"
             ''}
-            ${pkgs.lib.optionalString (builtins.elem "global-dictation" linuxFeatureIds) ''
+            ${pkgs.lib.optionalString (builtins.elem "global-dictation" effectiveLinuxFeatureIds) ''
             export CODEX_GLOBAL_DICTATION_LINUX_SOURCE="${codexGlobalDictationBinary}/bin/codex-global-dictation-linux"
             ''}
             mkdir -p "$HOME" "$npm_config_cache" "$CARGO_HOME"
@@ -569,9 +594,14 @@ PY
           '';
         };
 
-        buildCodexDesktop = { enableComputerUseUi ? false, linuxFeatureIds ? [ ] }:
+        buildCodexDesktop = { enableComputerUseUi ? false, linuxFeatureIds ? [ ], linuxFeaturesConfigOverride ? null }:
         let
-          normalizedLinuxFeatureIds = nixLinuxFeatures.normalize linuxFeatureIds;
+          effectiveLinuxFeaturesConfig =
+            if linuxFeaturesConfigOverride == null then
+              normalizeLinuxFeaturesConfig { enabled = linuxFeatureIds; }
+            else
+              normalizeLinuxFeaturesConfig linuxFeaturesConfigOverride;
+          normalizedLinuxFeatureIds = effectiveLinuxFeaturesConfig.enabled;
           featureArgs = {
             inherit enableComputerUseUi;
             linuxFeatureIds = normalizedLinuxFeatureIds;
@@ -579,6 +609,7 @@ PY
           payload = mkCodexDesktopPayload {
             inherit enableComputerUseUi;
             linuxFeatureIds = normalizedLinuxFeatureIds;
+            linuxFeaturesConfigOverride = effectiveLinuxFeaturesConfig;
           };
           payloadLauncherPath = launcherPath + pkgs.lib.optionalString
             (builtins.elem "global-dictation" normalizedLinuxFeatureIds)
@@ -706,18 +737,8 @@ PY
           ];
         };
 
-        codexDesktopNixFeatureCheck = codexDesktop.override {
-          linuxFeatureIds = [
-            "appshots"
-            "frameless-titlebar"
-            "global-dictation"
-            "mcp-helper-reaper"
-            "node-repl-reaper"
-            "open-target-discovery"
-            "persistent-status-panel"
-            "plugin-update-button"
-            "skill-invocation-policy"
-          ];
+        codexDesktopWatchdogFeatureCheck = codexDesktop.override {
+          linuxFeaturesConfigOverride = watchdogLinuxFeaturesConfig;
         };
 
         codexDesktopPluginSkillFeatureCheck = codexDesktop.override {
@@ -743,13 +764,29 @@ PY
               exit 1
             fi
             matched_composer_assets=0
-            for asset in ${codexDesktopPluginSkillFeatureCheck}/opt/codex-desktop/content/webview/assets/app-initial~app-main~*.js; do
+            matched_registration_assets=0
+            matched_trigger_assets=0
+            for asset in ${codexDesktopPluginSkillFeatureCheck}/opt/codex-desktop/content/webview/assets/*.js; do
               if grep -F 'codexLinuxManualSkillComposerV1' "$asset" >/dev/null; then
                 matched_composer_assets=$((matched_composer_assets + 1))
+              fi
+              if grep -F 'codexLinuxManualSkillRegistrationV1' "$asset" >/dev/null; then
+                matched_registration_assets=$((matched_registration_assets + 1))
+              fi
+              if grep -F 'codexLinuxManualSkillTriggerV1' "$asset" >/dev/null; then
+                matched_trigger_assets=$((matched_trigger_assets + 1))
               fi
             done
             if [ "$matched_composer_assets" -ne 1 ]; then
               echo "expected exactly one patched Skill composer asset in the selected Codex payload" >&2
+              exit 1
+            fi
+            if [ "$matched_registration_assets" -ne 1 ]; then
+              echo "expected exactly one patched Skill trigger-registration asset in the selected Codex payload" >&2
+              exit 1
+            fi
+            if [ "$matched_trigger_assets" -ne 1 ]; then
+              echo "expected exactly one patched Skill trigger-parser asset in the selected Codex payload" >&2
               exit 1
             fi
             touch "$out"
@@ -817,7 +854,8 @@ PY
           nix-linux-features-evaluation = import ./nix/linux-features-test.nix {
             inherit pkgs self system;
           };
-          nix-linux-features-multi-feature = codexDesktopNixFeatureCheck;
+          watchdog-linux-features = codexDesktopWatchdogFeatureCheck;
+          nix-linux-features-multi-feature = codexDesktopWatchdogFeatureCheck;
           nix-plugin-skill-feature-payload = codexDesktopNixFeatureAcceptance;
         };
 

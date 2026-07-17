@@ -4,6 +4,8 @@ const {
   webviewAssetPatch,
 } = require("../../../../descriptor.js");
 const {
+  COMPUTER_USE_AVAILABILITY_MARKER,
+  COMPUTER_USE_INSTALL_FLOW_MARKER,
   applyLinuxComputerUseRendererAvailabilityPatch,
   applyLinuxComputerUseInstallFlowPatch,
 } = require("../../../../impl/computer-use.js");
@@ -15,9 +17,10 @@ module.exports = [
     order: 1100,
     ciPolicy: "opt-in",
     enabled: (context) => context.enableComputerUseUi,
-    pattern: /^computer-use-settings.*\.js$/,
+    pattern: /^computer-use-settings-[^.]+\.js$/,
     missingDescription: "Computer Use availability bundle",
     skipDescription: "Linux Computer Use UI availability patch",
+    requiredMarkers: [COMPUTER_USE_AVAILABILITY_MARKER],
     apply: applyLinuxComputerUseRendererAvailabilityPatch,
   }),
   webviewAssetPatch({
@@ -26,9 +29,10 @@ module.exports = [
     order: 1110,
     ciPolicy: "opt-in",
     enabled: (context) => context.enableComputerUseUi,
-    pattern: /^app-initial~app-main~new-thread-panel-page~onboarding-page~appgen-library-page~hotkey-windo~nrw3o0ql-[^.]+\.js$/,
+    pattern: /^app-initial~.*artifact-tab-content\.electron~.*\.js$/,
     missingDescription: "current Computer Use install flow bundle",
     skipDescription: "Linux Computer Use install flow patch",
+    requiredMarkers: [COMPUTER_USE_INSTALL_FLOW_MARKER],
     apply: applyLinuxComputerUseInstallFlowPatch,
   }),
 ];

@@ -15,7 +15,12 @@ It supports:
 
 ## Runtime Dependencies
 
-Install `ydotool` when you need the fallback input path:
+Install `ydotool` 1.0 or newer when you need the fallback input path. Some
+Debian and Ubuntu releases still package the incompatible pre-1.0 CLI; the
+Computer Use readiness report detects and rejects it instead of sending unsafe
+input commands. Detection checks the `key` raw-event syntax and the
+`mousemove --absolute` capability directly, so supported builds do not depend
+on optional or renamed utility subcommands.
 
 ```bash
 # Debian / Ubuntu
@@ -63,7 +68,7 @@ The Niri backend uses the installed compositor CLI for `windows`, `workspaces`,
 `outputs`, and exact focus actions. Verify the session IPC directly with:
 
 ```bash
-niri msg --json windows
+niri msg -j windows
 ```
 
 Desktop processes started by a service do not always inherit `NIRI_SOCKET`.
@@ -77,7 +82,8 @@ workspace-to-output mapping, or output geometry is unavailable, window listing
 and exact focus still work but `bounds.x`/`bounds.y` remain `null`; relative
 window click/scroll operations then fail safely instead of guessing coordinates.
 A targeted screenshot cannot be cropped without an origin, so it falls back to
-the uncropped full-screen capture.
+the uncropped full-screen capture. The discovered socket must still belong to
+the active Niri session and be reachable by the desktop user.
 
 ## Verify Readiness
 
