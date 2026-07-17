@@ -305,7 +305,7 @@ function patchWorkspaceRootOpenTargets(extractedDir) {
   let changed = 0;
 
   for (const name of fs.readdirSync(assetsDir)) {
-    if (!/^(?:app-main-.*|app-initial~app-main~.*projects-index.*)\.js$/u.test(name)) {
+    if (!/^(?:app-main-.*|app-initial~app-main~(?:.*projects-index.*|page-.*))\.js$/u.test(name)) {
       continue;
     }
     const filePath = path.join(assetsDir, name);

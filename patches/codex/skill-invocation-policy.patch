@@ -1,0 +1,805 @@
+diff --git a/app-server-protocol/schema/json/ClientRequest.json b/app-server-protocol/schema/json/ClientRequest.json
+index d391cac..5ad5838 100644
+--- a/app-server-protocol/schema/json/ClientRequest.json
++++ b/app-server-protocol/schema/json/ClientRequest.json
+@@ -3483,6 +3483,12 @@
+     },
+     "SkillsConfigWriteParams": {
+       "properties": {
++        "allowImplicitInvocation": {
++          "type": [
++            "boolean",
++            "null"
++          ]
++        },
+         "enabled": {
+           "type": "boolean"
+         },
+diff --git a/app-server-protocol/schema/json/codex_app_server_protocol.schemas.json b/app-server-protocol/schema/json/codex_app_server_protocol.schemas.json
+index b7526b0..45a85dc 100644
+--- a/app-server-protocol/schema/json/codex_app_server_protocol.schemas.json
++++ b/app-server-protocol/schema/json/codex_app_server_protocol.schemas.json
+@@ -16600,6 +16600,9 @@
+       },
+       "SkillMetadata": {
+         "properties": {
++          "allowImplicitInvocation": {
++            "type": "boolean"
++          },
+           "dependencies": {
+             "anyOf": [
+               {
+@@ -16644,6 +16647,7 @@
+           }
+         },
+         "required": [
++          "allowImplicitInvocation",
+           "description",
+           "enabled",
+           "name",
+@@ -16674,6 +16678,9 @@
+       },
+       "SkillSummary": {
+         "properties": {
++          "allowImplicitInvocation": {
++            "type": "boolean"
++          },
+           "description": {
+             "type": "string"
+           },
+@@ -16711,6 +16718,7 @@
+           }
+         },
+         "required": [
++          "allowImplicitInvocation",
+           "description",
+           "enabled",
+           "name"
+@@ -16765,6 +16773,12 @@
+       "SkillsConfigWriteParams": {
+         "$schema": "http://json-schema.org/draft-07/schema#",
+         "properties": {
++          "allowImplicitInvocation": {
++            "type": [
++              "boolean",
++              "null"
++            ]
++          },
+           "enabled": {
+             "type": "boolean"
+           },
+diff --git a/app-server-protocol/schema/json/codex_app_server_protocol.v2.schemas.json b/app-server-protocol/schema/json/codex_app_server_protocol.v2.schemas.json
+index e1afc78..80c1412 100644
+--- a/app-server-protocol/schema/json/codex_app_server_protocol.v2.schemas.json
++++ b/app-server-protocol/schema/json/codex_app_server_protocol.v2.schemas.json
+@@ -14379,6 +14379,9 @@
+     },
+     "SkillMetadata": {
+       "properties": {
++        "allowImplicitInvocation": {
++          "type": "boolean"
++        },
+         "dependencies": {
+           "anyOf": [
+             {
+@@ -14423,6 +14426,7 @@
+         }
+       },
+       "required": [
++        "allowImplicitInvocation",
+         "description",
+         "enabled",
+         "name",
+@@ -14453,6 +14457,9 @@
+     },
+     "SkillSummary": {
+       "properties": {
++        "allowImplicitInvocation": {
++          "type": "boolean"
++        },
+         "description": {
+           "type": "string"
+         },
+@@ -14490,6 +14497,7 @@
+         }
+       },
+       "required": [
++        "allowImplicitInvocation",
+         "description",
+         "enabled",
+         "name"
+@@ -14544,6 +14552,12 @@
+     "SkillsConfigWriteParams": {
+       "$schema": "http://json-schema.org/draft-07/schema#",
+       "properties": {
++        "allowImplicitInvocation": {
++          "type": [
++            "boolean",
++            "null"
++          ]
++        },
+         "enabled": {
+           "type": "boolean"
+         },
+diff --git a/app-server-protocol/schema/json/v2/PluginReadResponse.json b/app-server-protocol/schema/json/v2/PluginReadResponse.json
+index 628cb13..d8e280c 100644
+--- a/app-server-protocol/schema/json/v2/PluginReadResponse.json
++++ b/app-server-protocol/schema/json/v2/PluginReadResponse.json
+@@ -769,6 +769,9 @@
+     },
+     "SkillSummary": {
+       "properties": {
++        "allowImplicitInvocation": {
++          "type": "boolean"
++        },
+         "description": {
+           "type": "string"
+         },
+@@ -806,6 +809,7 @@
+         }
+       },
+       "required": [
++        "allowImplicitInvocation",
+         "description",
+         "enabled",
+         "name"
+diff --git a/app-server-protocol/schema/json/v2/SkillsConfigWriteParams.json b/app-server-protocol/schema/json/v2/SkillsConfigWriteParams.json
+index 696226a..3caf4a5 100644
+--- a/app-server-protocol/schema/json/v2/SkillsConfigWriteParams.json
++++ b/app-server-protocol/schema/json/v2/SkillsConfigWriteParams.json
+@@ -7,6 +7,12 @@
+     }
+   },
+   "properties": {
++    "allowImplicitInvocation": {
++      "type": [
++        "boolean",
++        "null"
++      ]
++    },
+     "enabled": {
+       "type": "boolean"
+     },
+diff --git a/app-server-protocol/schema/json/v2/SkillsListResponse.json b/app-server-protocol/schema/json/v2/SkillsListResponse.json
+index 6c72bfb..c4c6228 100644
+--- a/app-server-protocol/schema/json/v2/SkillsListResponse.json
++++ b/app-server-protocol/schema/json/v2/SkillsListResponse.json
+@@ -85,6 +85,9 @@
+     },
+     "SkillMetadata": {
+       "properties": {
++        "allowImplicitInvocation": {
++          "type": "boolean"
++        },
+         "dependencies": {
+           "anyOf": [
+             {
+@@ -129,6 +132,7 @@
+         }
+       },
+       "required": [
++        "allowImplicitInvocation",
+         "description",
+         "enabled",
+         "name",
+diff --git a/app-server-protocol/schema/typescript/v2/SkillMetadata.ts b/app-server-protocol/schema/typescript/v2/SkillMetadata.ts
+index e43484d..4d0d68f 100644
+--- a/app-server-protocol/schema/typescript/v2/SkillMetadata.ts
++++ b/app-server-protocol/schema/typescript/v2/SkillMetadata.ts
+@@ -10,4 +10,4 @@ export type SkillMetadata = { name: string, description: string,
+ /**
+  * Legacy short_description from SKILL.md. Prefer SKILL.json interface.short_description.
+  */
+-shortDescription?: string, interface?: SkillInterface, dependencies?: SkillDependencies, path: AbsolutePathBuf, scope: SkillScope, enabled: boolean, };
++shortDescription?: string, interface?: SkillInterface, dependencies?: SkillDependencies, path: AbsolutePathBuf, scope: SkillScope, enabled: boolean, allowImplicitInvocation: boolean, };
+diff --git a/app-server-protocol/schema/typescript/v2/SkillSummary.ts b/app-server-protocol/schema/typescript/v2/SkillSummary.ts
+index 4999a07..03208f7 100644
+--- a/app-server-protocol/schema/typescript/v2/SkillSummary.ts
++++ b/app-server-protocol/schema/typescript/v2/SkillSummary.ts
+@@ -4,4 +4,4 @@
+ import type { AbsolutePathBuf } from "../AbsolutePathBuf";
+ import type { SkillInterface } from "./SkillInterface";
+ 
+-export type SkillSummary = { name: string, description: string, shortDescription: string | null, interface: SkillInterface | null, path: AbsolutePathBuf | null, enabled: boolean, };
++export type SkillSummary = { name: string, description: string, shortDescription: string | null, interface: SkillInterface | null, path: AbsolutePathBuf | null, enabled: boolean, allowImplicitInvocation: boolean, };
+diff --git a/app-server-protocol/schema/typescript/v2/SkillsConfigWriteParams.ts b/app-server-protocol/schema/typescript/v2/SkillsConfigWriteParams.ts
+index 39192e0..85daecf 100644
+--- a/app-server-protocol/schema/typescript/v2/SkillsConfigWriteParams.ts
++++ b/app-server-protocol/schema/typescript/v2/SkillsConfigWriteParams.ts
+@@ -11,4 +11,4 @@ path?: AbsolutePathBuf | null,
+ /**
+  * Name-based selector.
+  */
+-name?: string | null, enabled: boolean, };
++name?: string | null, enabled: boolean, allowImplicitInvocation?: boolean | null, };
+diff --git a/app-server-protocol/src/protocol/v2/plugin.rs b/app-server-protocol/src/protocol/v2/plugin.rs
+index 9bd53b5..b999851 100644
+--- a/app-server-protocol/src/protocol/v2/plugin.rs
++++ b/app-server-protocol/src/protocol/v2/plugin.rs
+@@ -429,6 +429,7 @@ pub struct SkillMetadata {
+     pub path: AbsolutePathBuf,
+     pub scope: SkillScope,
+     pub enabled: bool,
++    pub allow_implicit_invocation: bool,
+ }
+ 
+ #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+@@ -706,6 +707,7 @@ pub struct SkillSummary {
+     pub interface: Option<SkillInterface>,
+     pub path: Option<AbsolutePathBuf>,
+     pub enabled: bool,
++    pub allow_implicit_invocation: bool,
+ }
+ 
+ #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+@@ -784,6 +786,8 @@ pub struct SkillsConfigWriteParams {
+     #[ts(optional = nullable)]
+     pub name: Option<String>,
+     pub enabled: bool,
++    #[ts(optional = nullable)]
++    pub allow_implicit_invocation: Option<bool>,
+ }
+ 
+ #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+@@ -835,6 +839,7 @@ impl From<CoreSkillMetadata> for SkillMetadata {
+             path: value.path,
+             scope: value.scope.into(),
+             enabled: true,
++            allow_implicit_invocation: true,
+         }
+     }
+ }
+diff --git a/app-server/src/request_processors/catalog_processor.rs b/app-server/src/request_processors/catalog_processor.rs
+index 6cb4385..e13ae7c 100644
+--- a/app-server/src/request_processors/catalog_processor.rs
++++ b/app-server/src/request_processors/catalog_processor.rs
+@@ -16,13 +16,13 @@ pub(crate) struct CatalogRequestProcessor {
+ const SKILLS_LIST_CWD_CONCURRENCY: usize = 5;
+ 
+ fn skills_to_info(
+-    skills: &[codex_core::skills::SkillMetadata],
+-    disabled_paths: &HashSet<AbsolutePathBuf>,
++    outcome: &codex_core::skills::SkillLoadOutcome,
+ ) -> Vec<codex_app_server_protocol::SkillMetadata> {
+-    skills
++    outcome
++        .skills
+         .iter()
+         .map(|skill| {
+-            let enabled = !disabled_paths.contains(&skill.path_to_skills_md);
++            let enabled = outcome.is_skill_enabled(skill);
+             codex_app_server_protocol::SkillMetadata {
+                 name: skill.name.clone(),
+                 description: skill.description.clone(),
+@@ -56,6 +56,7 @@ fn skills_to_info(
+                 path: skill.path_to_skills_md.clone(),
+                 scope: skill.scope.into(),
+                 enabled,
++                allow_implicit_invocation: skill.allows_implicit_invocation(),
+             }
+         })
+         .collect()
+@@ -554,7 +555,7 @@ impl CatalogRequestProcessor {
+                         .await;
+                     let outcome = snapshot.outcome();
+                     let errors = errors_to_info(&outcome.errors);
+-                    let skills = skills_to_info(&outcome.skills, &outcome.disabled_paths);
++                    let skills = skills_to_info(outcome);
+                     (
+                         index,
+                         codex_app_server_protocol::SkillsListEntry {
+@@ -672,15 +673,19 @@ impl CatalogRequestProcessor {
+             path,
+             name,
+             enabled,
++            allow_implicit_invocation,
+         } = params;
+         let edit = match (path, name) {
+             (Some(path), None) => ConfigEdit::SetSkillConfig {
+                 path: path.into_path_buf(),
+                 enabled,
++                allow_implicit_invocation,
++            },
++            (None, Some(name)) if !name.trim().is_empty() => ConfigEdit::SetSkillConfigByName {
++                name,
++                enabled,
++                allow_implicit_invocation,
+             },
+-            (None, Some(name)) if !name.trim().is_empty() => {
+-                ConfigEdit::SetSkillConfigByName { name, enabled }
+-            }
+             _ => {
+                 return Err(invalid_params(
+                     "skills/config/write requires exactly one of path or name",
+diff --git a/app-server/src/request_processors/plugins.rs b/app-server/src/request_processors/plugins.rs
+index ed8495d..067d1a5 100644
+--- a/app-server/src/request_processors/plugins.rs
++++ b/app-server/src/request_processors/plugins.rs
+@@ -59,6 +59,7 @@ fn plugin_skills_to_info(
+             }),
+             path: Some(skill.path_to_skills_md.clone()),
+             enabled: !disabled_skill_paths.contains(&skill.path_to_skills_md),
++            allow_implicit_invocation: skill.allows_implicit_invocation(),
+         })
+         .collect()
+ }
+@@ -2278,6 +2279,7 @@ fn remote_plugin_detail_to_info(
+                 interface: skill.interface,
+                 path: None,
+                 enabled: skill.enabled,
++                allow_implicit_invocation: true,
+             })
+             .collect(),
+         hooks: Vec::new(),
+diff --git a/config/src/skills_config.rs b/config/src/skills_config.rs
+index 948b906..0e7c170 100644
+--- a/config/src/skills_config.rs
++++ b/config/src/skills_config.rs
+@@ -19,6 +19,9 @@ pub struct SkillConfig {
+     #[serde(default, skip_serializing_if = "Option::is_none")]
+     pub name: Option<String>,
+     pub enabled: bool,
++    /// User override for whether the model may select this skill implicitly.
++    #[serde(default, skip_serializing_if = "Option::is_none")]
++    pub allow_implicit_invocation: Option<bool>,
+ }
+ 
+ #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
+diff --git a/config/src/types_tests.rs b/config/src/types_tests.rs
+index 2c3f69d..88af22f 100644
+--- a/config/src/types_tests.rs
++++ b/config/src/types_tests.rs
+@@ -38,10 +38,27 @@ fn deserialize_skill_config_with_path_selector() {
+             ),
+             name: None,
+             enabled: false,
++            allow_implicit_invocation: None,
+         }
+     );
+ }
+ 
++#[test]
++fn deserialize_skill_config_with_implicit_invocation_override() {
++    let cfg: SkillConfig = toml::from_str(
++        r#"
++            name = "github:yeet"
++            enabled = true
++            allow_implicit_invocation = false
++        "#,
++    )
++    .expect("should deserialize skill config with invocation override");
++
++    assert_eq!(cfg.name.as_deref(), Some("github:yeet"));
++    assert!(cfg.enabled);
++    assert_eq!(cfg.allow_implicit_invocation, Some(false));
++}
++
+ #[test]
+ fn memories_config_clamps_count_limits_to_nonzero_values() {
+     let config = MemoriesConfig::from(MemoriesToml {
+diff --git a/core-plugins/src/loader.rs b/core-plugins/src/loader.rs
+index 2b5c478..059dffb 100644
+--- a/core-plugins/src/loader.rs
++++ b/core-plugins/src/loader.rs
+@@ -27,6 +27,7 @@ use codex_connectors::parse_plugin_app_config_value;
+ use codex_core_skills::PluginSkillSnapshots;
+ use codex_core_skills::SkillMetadata;
+ use codex_core_skills::config_rules::SkillConfigRules;
++use codex_core_skills::config_rules::apply_implicit_invocation_overrides;
+ use codex_core_skills::config_rules::resolve_disabled_skill_paths;
+ use codex_core_skills::config_rules::skill_config_rules_from_stack;
+ use codex_core_skills::loader::SkillRoot;
+@@ -878,7 +879,8 @@ impl PluginSkillInventory {
+         )
+     }
+ 
+-    fn resolve(self, skill_config_rules: &SkillConfigRules) -> ResolvedPluginSkills {
++    fn resolve(mut self, skill_config_rules: &SkillConfigRules) -> ResolvedPluginSkills {
++        apply_implicit_invocation_overrides(&mut self.skills, skill_config_rules);
+         let disabled_skill_paths = resolve_disabled_skill_paths(&self.skills, skill_config_rules);
+         ResolvedPluginSkills {
+             skills: self.skills,
+diff --git a/core-skills/src/config_rules.rs b/core-skills/src/config_rules.rs
+index 05f3e48..cba3681 100644
+--- a/core-skills/src/config_rules.rs
++++ b/core-skills/src/config_rules.rs
+@@ -20,6 +20,7 @@ pub enum SkillConfigRuleSelector {
+ pub struct SkillConfigRule {
+     pub selector: SkillConfigRuleSelector,
+     pub enabled: bool,
++    pub allow_implicit_invocation: Option<bool>,
+ }
+ 
+ #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+@@ -57,10 +58,17 @@ pub fn skill_config_rules_from_stack(config_layer_stack: &ConfigLayerStack) -> S
+             };
+             // Preserve layer order so a later name selector can override an earlier path selector
+             // for the same loaded skill.
++            let inherited_allow_implicit_invocation = entries
++                .iter()
++                .find(|entry: &&SkillConfigRule| entry.selector == selector)
++                .and_then(|entry| entry.allow_implicit_invocation);
+             entries.retain(|entry: &SkillConfigRule| entry.selector != selector);
+             entries.push(SkillConfigRule {
+                 selector,
+                 enabled: entry.enabled,
++                allow_implicit_invocation: entry
++                    .allow_implicit_invocation
++                    .or(inherited_allow_implicit_invocation),
+             });
+         }
+     }
+@@ -68,6 +76,23 @@ pub fn skill_config_rules_from_stack(config_layer_stack: &ConfigLayerStack) -> S
+     SkillConfigRules { entries }
+ }
+ 
++pub fn apply_implicit_invocation_overrides(skills: &mut [SkillMetadata], rules: &SkillConfigRules) {
++    for entry in &rules.entries {
++        let Some(allow_implicit_invocation) = entry.allow_implicit_invocation else {
++            continue;
++        };
++        for skill in skills.iter_mut().filter(|skill| match &entry.selector {
++            SkillConfigRuleSelector::Path(path) => skill.path_to_skills_md == *path,
++            SkillConfigRuleSelector::Name(name) => skill.name == *name,
++        }) {
++            skill
++                .policy
++                .get_or_insert_default()
++                .allow_implicit_invocation = Some(allow_implicit_invocation);
++        }
++    }
++}
++
+ pub fn resolve_disabled_skill_paths(
+     skills: &[SkillMetadata],
+     rules: &SkillConfigRules,
+diff --git a/core-skills/src/service.rs b/core-skills/src/service.rs
+index b4e0d73..986ba0f 100644
+--- a/core-skills/src/service.rs
++++ b/core-skills/src/service.rs
+@@ -18,6 +18,7 @@ use crate::PluginSkillSnapshots;
+ use crate::SkillLoadOutcome;
+ use crate::build_implicit_skill_path_indexes;
+ use crate::config_rules::SkillConfigRules;
++use crate::config_rules::apply_implicit_invocation_overrides;
+ use crate::config_rules::resolve_disabled_skill_paths;
+ use crate::config_rules::skill_config_rules_from_stack;
+ use crate::loader::SkillRoot;
+@@ -214,8 +215,9 @@ impl SkillsService {
+         skill_config_rules: &SkillConfigRules,
+     ) -> SkillLoadOutcome {
+         let outcome = load_skills_from_roots(roots, input.plugin_skill_snapshots.as_ref()).await;
+-        let outcome =
++        let mut outcome =
+             crate::filter_skill_load_outcome_for_product(outcome, self.restriction_product);
++        apply_implicit_invocation_overrides(&mut outcome.skills, skill_config_rules);
+         let disabled_paths = resolve_disabled_skill_paths(&outcome.skills, skill_config_rules);
+         finalize_skill_outcome(outcome, disabled_paths)
+     }
+diff --git a/core-skills/src/service_tests.rs b/core-skills/src/service_tests.rs
+index 6026975..7e2ebc5 100644
+--- a/core-skills/src/service_tests.rs
++++ b/core-skills/src/service_tests.rs
+@@ -1,5 +1,6 @@
+ use super::*;
+ use crate::SkillMetadata;
++use crate::config_rules::apply_implicit_invocation_overrides;
+ use crate::config_rules::resolve_disabled_skill_paths;
+ use crate::config_rules::skill_config_rules_from_stack;
+ use codex_config::CONFIG_TOML_FILE;
+@@ -163,6 +164,21 @@ enabled = {enabled}
+     )
+ }
+ 
++fn path_policy_config(
++    path: &std::path::Path,
++    enabled: bool,
++    allow_implicit_invocation: bool,
++) -> String {
++    format!(
++        r#"[[skills.config]]
++path = "{}"
++enabled = {enabled}
++allow_implicit_invocation = {allow_implicit_invocation}
++"#,
++        path.display()
++    )
++}
++
+ async fn skills_for_config_with_stack(
+     skills_service: &SkillsService,
+     cwd: &TempDir,
+@@ -667,6 +683,44 @@ fn disabled_paths_for_skills_allows_session_flags_to_override_user_layer() {
+     );
+ }
+ 
++#[cfg_attr(windows, ignore)]
++#[test]
++fn implicit_invocation_override_survives_later_enabled_only_layer() {
++    let tempdir = tempfile::tempdir().expect("tempdir");
++    let skill_path = write_demo_skill(&tempdir);
++    let mut skill = test_skill("demo-skill", skill_path.clone());
++    let user_file = AbsolutePathBuf::try_from(tempdir.path().join("config.toml"))
++        .expect("user config path should be absolute");
++    let user_layer = ConfigLayerEntry::new(
++        ConfigLayerSource::User {
++            file: user_file,
++            profile: None,
++        },
++        toml::from_str(&path_policy_config(
++            &skill_path,
++            /*enabled*/ true,
++            /*allow_implicit_invocation*/ false,
++        ))
++        .expect("user layer toml"),
++    );
++    let session_layer = ConfigLayerEntry::new(
++        ConfigLayerSource::SessionFlags,
++        toml::from_str(&path_toggle_config(&skill_path, /*enabled*/ true))
++            .expect("session layer toml"),
++    );
++    let stack = ConfigLayerStack::new(
++        vec![user_layer, session_layer],
++        Default::default(),
++        ConfigRequirementsToml::default(),
++    )
++    .expect("valid config layer stack");
++
++    let rules = skill_config_rules_from_stack(&stack);
++    apply_implicit_invocation_overrides(std::slice::from_mut(&mut skill), &rules);
++
++    assert!(!skill.allows_implicit_invocation());
++}
++
+ #[cfg_attr(windows, ignore)]
+ #[test]
+ fn disabled_paths_for_skills_allows_session_flags_to_disable_user_enabled_skill() {
+diff --git a/core/src/config/edit.rs b/core/src/config/edit.rs
+index 2d7a413..6cac20f 100644
+--- a/core/src/config/edit.rs
++++ b/core/src/config/edit.rs
+@@ -61,9 +61,17 @@ pub enum ConfigEdit {
+     /// Add a disabled tool suggestion under `[tool_suggest].disabled_tools`.
+     AddToolSuggestDisabledTool(ToolSuggestDisabledTool),
+     /// Set or clear a skill config entry under `[[skills.config]]` by path.
+-    SetSkillConfig { path: PathBuf, enabled: bool },
++    SetSkillConfig {
++        path: PathBuf,
++        enabled: bool,
++        allow_implicit_invocation: Option<bool>,
++    },
+     /// Set or clear a skill config entry under `[[skills.config]]` by name.
+-    SetSkillConfigByName { name: String, enabled: bool },
++    SetSkillConfigByName {
++        name: String,
++        enabled: bool,
++        allow_implicit_invocation: Option<bool>,
++    },
+     /// Set trust_level under `[projects."<path>"]`,
+     /// migrating inline tables to explicit tables.
+     SetProjectTrustLevel { path: PathBuf, level: TrustLevel },
+@@ -315,12 +323,24 @@ impl ConfigDocument {
+             ConfigEdit::AddToolSuggestDisabledTool(disabled_tool) => {
+                 Ok(self.add_tool_suggest_disabled_tool(disabled_tool))
+             }
+-            ConfigEdit::SetSkillConfig { path, enabled } => {
+-                Ok(self.set_skill_config(SkillConfigSelector::Path(path.clone()), *enabled))
+-            }
+-            ConfigEdit::SetSkillConfigByName { name, enabled } => {
+-                Ok(self.set_skill_config(SkillConfigSelector::Name(name.clone()), *enabled))
+-            }
++            ConfigEdit::SetSkillConfig {
++                path,
++                enabled,
++                allow_implicit_invocation,
++            } => Ok(self.set_skill_config(
++                SkillConfigSelector::Path(path.clone()),
++                *enabled,
++                *allow_implicit_invocation,
++            )),
++            ConfigEdit::SetSkillConfigByName {
++                name,
++                enabled,
++                allow_implicit_invocation,
++            } => Ok(self.set_skill_config(
++                SkillConfigSelector::Name(name.clone()),
++                *enabled,
++                *allow_implicit_invocation,
++            )),
+             ConfigEdit::SetPath { segments, value } => Ok(self.insert(segments, value.clone())),
+             ConfigEdit::ClearPath { segments } => Ok(self.clear_owned(segments)),
+             ConfigEdit::SetProjectTrustLevel { path, level } => {
+@@ -450,7 +470,12 @@ impl ConfigDocument {
+         true
+     }
+ 
+-    fn set_skill_config(&mut self, selector: SkillConfigSelector, enabled: bool) -> bool {
++    fn set_skill_config(
++        &mut self,
++        selector: SkillConfigSelector,
++        enabled: bool,
++        allow_implicit_invocation: Option<bool>,
++    ) -> bool {
+         let selector = match selector {
+             SkillConfigSelector::Name(name) => SkillConfigSelector::Name(name.trim().to_string()),
+             SkillConfigSelector::Path(path) => {
+@@ -468,7 +493,7 @@ impl ConfigDocument {
+             let skills_item = match root.get_mut("skills") {
+                 Some(item) => item,
+                 None => {
+-                    if enabled {
++                    if enabled && allow_implicit_invocation.is_none() {
+                         return false;
+                     }
+                     root.insert(
+@@ -483,7 +508,7 @@ impl ConfigDocument {
+             };
+ 
+             if document_helpers::ensure_table_for_write(skills_item).is_none() {
+-                if enabled {
++                if enabled && allow_implicit_invocation.is_none() {
+                     return false;
+                 }
+                 *skills_item = TomlItem::Table(document_helpers::new_implicit_table());
+@@ -495,7 +520,7 @@ impl ConfigDocument {
+             let config_item = match skills_table.get_mut("config") {
+                 Some(item) => item,
+                 None => {
+-                    if enabled {
++                    if enabled && allow_implicit_invocation.is_none() {
+                         return false;
+                     }
+                     skills_table.insert("config", TomlItem::ArrayOfTables(ArrayOfTables::new()));
+@@ -507,7 +532,7 @@ impl ConfigDocument {
+             };
+ 
+             if !matches!(config_item, TomlItem::ArrayOfTables(_)) {
+-                if enabled {
++                if enabled && allow_implicit_invocation.is_none() {
+                     return false;
+                 }
+                 *config_item = TomlItem::ArrayOfTables(ArrayOfTables::new());
+@@ -523,7 +548,16 @@ impl ConfigDocument {
+                     .map(|_| idx)
+             });
+ 
+-            if enabled {
++            let existing_allow_implicit_invocation = existing_index.and_then(|index| {
++                overrides
++                    .get(index)
++                    .and_then(|table| table.get("allow_implicit_invocation"))
++                    .and_then(|item| item.as_bool())
++            });
++            let effective_allow_implicit_invocation =
++                allow_implicit_invocation.or(existing_allow_implicit_invocation);
++
++            if enabled && effective_allow_implicit_invocation.is_none() {
+                 if let Some(index) = existing_index {
+                     overrides.remove(index);
+                     mutated = true;
+@@ -538,7 +572,11 @@ impl ConfigDocument {
+                 for (idx, table) in overrides.iter_mut().enumerate() {
+                     if idx == index {
+                         write_skill_config_selector(table, &selector);
+-                        table["enabled"] = value(false);
++                        table["enabled"] = value(enabled);
++                        if let Some(allow_implicit_invocation) = effective_allow_implicit_invocation
++                        {
++                            table["allow_implicit_invocation"] = value(allow_implicit_invocation);
++                        }
+                         mutated = true;
+                         break;
+                     }
+@@ -547,7 +585,10 @@ impl ConfigDocument {
+                 let mut entry = TomlTable::new();
+                 entry.set_implicit(false);
+                 write_skill_config_selector(&mut entry, &selector);
+-                entry["enabled"] = value(false);
++                entry["enabled"] = value(enabled);
++                if let Some(allow_implicit_invocation) = effective_allow_implicit_invocation {
++                    entry["allow_implicit_invocation"] = value(allow_implicit_invocation);
++                }
+                 overrides.push(entry);
+                 mutated = true;
+             }
+diff --git a/core/src/config/edit_tests.rs b/core/src/config/edit_tests.rs
+index d47f128..78bf32e 100644
+--- a/core/src/config/edit_tests.rs
++++ b/core/src/config/edit_tests.rs
+@@ -302,6 +302,7 @@ fn set_skill_config_writes_disabled_entry() {
+         .with_edits([ConfigEdit::SetSkillConfig {
+             path: PathBuf::from("/tmp/skills/demo/SKILL.md"),
+             enabled: false,
++            allow_implicit_invocation: None,
+         }])
+         .apply_blocking()
+         .expect("persist");
+@@ -331,6 +332,7 @@ enabled = false
+         .with_edits([ConfigEdit::SetSkillConfig {
+             path: PathBuf::from("/tmp/skills/demo/SKILL.md"),
+             enabled: true,
++            allow_implicit_invocation: None,
+         }])
+         .apply_blocking()
+         .expect("persist");
+@@ -348,6 +350,7 @@ fn set_skill_config_writes_name_selector_entry() {
+         .with_edits([ConfigEdit::SetSkillConfigByName {
+             name: "github:yeet".to_string(),
+             enabled: false,
++            allow_implicit_invocation: None,
+         }])
+         .apply_blocking()
+         .expect("persist");
+@@ -360,6 +363,48 @@ enabled = false
+     assert_eq!(contents, expected);
+ }
+ 
++#[test]
++fn set_skill_config_preserves_manual_only_policy_across_enabled_toggles() {
++    let tmp = tempdir().expect("tmpdir");
++    let codex_home = tmp.path();
++    let path = PathBuf::from("/tmp/skills/demo/SKILL.md");
++
++    ConfigEditsBuilder::new(codex_home)
++        .with_edits([ConfigEdit::SetSkillConfig {
++            path: path.clone(),
++            enabled: true,
++            allow_implicit_invocation: Some(false),
++        }])
++        .apply_blocking()
++        .expect("persist manual-only policy");
++
++    ConfigEditsBuilder::new(codex_home)
++        .with_edits([ConfigEdit::SetSkillConfig {
++            path: path.clone(),
++            enabled: false,
++            allow_implicit_invocation: None,
++        }])
++        .apply_blocking()
++        .expect("disable skill");
++
++    ConfigEditsBuilder::new(codex_home)
++        .with_edits([ConfigEdit::SetSkillConfig {
++            path,
++            enabled: true,
++            allow_implicit_invocation: None,
++        }])
++        .apply_blocking()
++        .expect("re-enable skill");
++
++    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
++    let expected = r#"[[skills.config]]
++path = "/tmp/skills/demo/SKILL.md"
++enabled = true
++allow_implicit_invocation = false
++"#;
++    assert_eq!(contents, expected);
++}
++
+ #[test]
+ fn blocking_set_model_ignores_inline_legacy_profile_contents() {
+     let tmp = tempdir().expect("tmpdir");
+diff --git a/tui/src/chatwidget/tests/helpers.rs b/tui/src/chatwidget/tests/helpers.rs
+index dbdac0d..34fb6df 100644
+--- a/tui/src/chatwidget/tests/helpers.rs
++++ b/tui/src/chatwidget/tests/helpers.rs
+@@ -1478,6 +1478,7 @@ pub(super) fn plugins_test_detail(
+                     "skills/{name}/SKILL.md"
+                 ))),
+                 enabled: true,
++                allow_implicit_invocation: true,
+             })
+             .collect(),
+         hooks: hooks
+diff --git a/tui/src/config_update.rs b/tui/src/config_update.rs
+index a71f34b..580841d 100644
+--- a/tui/src/config_update.rs
++++ b/tui/src/config_update.rs
+@@ -200,6 +200,7 @@ pub(crate) async fn write_skill_enabled(
+                 path: Some(path),
+                 name: None,
+                 enabled,
++                allow_implicit_invocation: None,
+             },
+         })
+         .await

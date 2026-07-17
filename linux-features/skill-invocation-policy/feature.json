@@ -1,0 +1,9 @@
+{
+  "id": "skill-invocation-policy",
+  "title": "Skill Invocation Policy",
+  "description": "Adds automatic/manual-only controls and separate $/! Skill menus.",
+  "defaultEnabled": false,
+  "entrypoints": {
+    "patchDescriptors": "./patch.js"
+  }
+}

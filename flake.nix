@@ -93,10 +93,10 @@
 
         codexDmg = pkgs.fetchurl {
           url = "https://persistent.oaistatic.com/codex-app-prod/ChatGPT.dmg";
-          hash = "sha256-1PxxelP97Pp2pzFH+qYJ9l4buvUtW0NEbMykwhpDA0c=";
+          hash = "sha256-QONIFOdOMJQ8IJ69TalM1N41gaUsW/++K88uSI1jYcY=";
         };
 
-        codexVersion = "26.707.61608";
+        codexVersion = "26.707.72221";
         electronVersion = "42.1.0";
         electronPlatform =
           {
@@ -700,7 +700,9 @@ PY
             "mcp-helper-reaper"
             "open-target-discovery"
             "pet-overlay"
+            "plugin-update-button"
             "remote-mobile-control"
+            "skill-invocation-policy"
           ];
         };
 
@@ -713,8 +715,45 @@ PY
             "node-repl-reaper"
             "open-target-discovery"
             "persistent-status-panel"
+            "plugin-update-button"
+            "skill-invocation-policy"
           ];
         };
+
+        codexDesktopPluginSkillFeatureCheck = codexDesktop.override {
+          linuxFeatureIds = [
+            "plugin-update-button"
+            "skill-invocation-policy"
+          ];
+        };
+
+        codexDesktopNixFeatureAcceptance = pkgs.runCommand
+          "codex-desktop-nix-linux-features-acceptance"
+          { nativeBuildInputs = [ pkgs.gnugrep ]; }
+          ''
+            matched_assets=0
+            for asset in ${codexDesktopPluginSkillFeatureCheck}/opt/codex-desktop/content/webview/assets/plugin-detail-page-*.js; do
+              if grep -F 'codexLinuxSkillInvocationPolicyV1' "$asset" >/dev/null \
+                && grep -F 'codexLinuxGitPluginUpdateV1' "$asset" >/dev/null; then
+                matched_assets=$((matched_assets + 1))
+              fi
+            done
+            if [ "$matched_assets" -ne 1 ]; then
+              echo "expected exactly one patched plugin detail asset in the selected Codex payload" >&2
+              exit 1
+            fi
+            matched_composer_assets=0
+            for asset in ${codexDesktopPluginSkillFeatureCheck}/opt/codex-desktop/content/webview/assets/app-initial~app-main~*.js; do
+              if grep -F 'codexLinuxManualSkillComposerV1' "$asset" >/dev/null; then
+                matched_composer_assets=$((matched_composer_assets + 1))
+              fi
+            done
+            if [ "$matched_composer_assets" -ne 1 ]; then
+              echo "expected exactly one patched Skill composer asset in the selected Codex payload" >&2
+              exit 1
+            fi
+            touch "$out"
+          '';
 
         installer = pkgs.writeShellApplication {
           name = "codex-desktop-installer";
@@ -779,6 +818,7 @@ PY
             inherit pkgs self system;
           };
           nix-linux-features-multi-feature = codexDesktopNixFeatureCheck;
+          nix-plugin-skill-feature-payload = codexDesktopNixFeatureAcceptance;
         };
 
         apps.default = {

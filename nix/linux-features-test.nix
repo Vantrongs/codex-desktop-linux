@@ -19,6 +19,8 @@ let
     "remote-mobile-control"
     "pet-overlay"
     "open-target-discovery"
+    "skill-invocation-policy"
+    "plugin-update-button"
     "appshots"
   ];
   normalizedTestFeatureIds = [
@@ -29,7 +31,9 @@ let
     "open-target-discovery"
     "persistent-status-panel"
     "pet-overlay"
+    "plugin-update-button"
     "remote-mobile-control"
+    "skill-invocation-policy"
   ];
 
   evalHomeManager = moduleConfig:
@@ -132,6 +136,8 @@ let
       "pet-overlay"
       "open-target-discovery"
       "appshots"
+      "plugin-update-button"
+      "skill-invocation-policy"
       "appshots"
     ];
   };

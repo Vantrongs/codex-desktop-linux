@@ -9,7 +9,9 @@ let
     "open-target-discovery"
     "persistent-status-panel"
     "pet-overlay"
+    "plugin-update-button"
     "remote-mobile-control"
+    "skill-invocation-policy"
   ];
 
   sortAndDeduplicate = featureIds:

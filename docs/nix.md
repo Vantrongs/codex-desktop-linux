@@ -199,6 +199,18 @@ Computer Use UI only:
 nix run github:ilysenko/codex-desktop-linux#codex-desktop-computer-use-ui
 ```
 
+The full Linux package includes the curated Linux feature set, including the
+Skill automatic/manual-only policy control and the installed Git-plugin update
+action:
+
+```bash
+nix run github:ilysenko/codex-desktop-linux#codex-desktop-full-linux
+```
+
+The policy UI still requires a compatible Codex CLI selected with
+`programs.codexDesktopLinux.cliPackage` or `CODEX_CLI_PATH`; Desktop package
+outputs do not bundle the CLI.
+
 The Home Manager and NixOS modules accept these feature IDs through
 `programs.codexDesktopLinux.linuxFeatures`:
 
@@ -210,7 +222,9 @@ The Home Manager and NixOS modules accept these feature IDs through
 | `node-repl-reaper` | Cleanup for leaked Browser Use `node_repl` helpers |
 | `open-target-discovery` | Linux terminal, editor, and file-manager discovery |
 | `persistent-status-panel` | Persistent `/status` panel state |
+| `plugin-update-button` | Update an installed Git-sourced plugin using source refresh plus atomic reinstall |
 | `remote-mobile-control` | Experimental Linux Remote host and outbound-control adaptation |
+| `skill-invocation-policy` | Separate automatic/manual-only policy control and `$`/`!` Skill menus; requires a compatible CLI |
 
 The list is validated during module evaluation, then deduplicated and sorted so
 equivalent configurations produce the same derivation. Features that are not in

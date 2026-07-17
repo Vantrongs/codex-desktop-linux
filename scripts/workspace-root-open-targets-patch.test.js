@@ -134,7 +134,7 @@ test("workspace root open targets patch scans current shared app main project ch
     const localChunkName = "app-initial~app-main~projects-index-page~local-conversation-page-current.js";
     const localSource = "function LocalProjectHover(){return {onClick:()=>Ta({path:e.value,cwd:null,target:`fileManager`,openFile:x.mutate})}}";
     fs.writeFileSync(path.join(assetsDir, localChunkName), localSource);
-    const sharedChunkName = "app-initial~app-main~remote-conversation-page~projects-index-page-current.js";
+    const sharedChunkName = "app-initial~app-main~page-current.js";
     fs.writeFileSync(
       path.join(assetsDir, sharedChunkName),
       [
