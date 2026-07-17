@@ -52,7 +52,10 @@
             })
           ];
         };
-        flakeSourceCommit = self.rev or (self.dirtyRev or "");
+        # Only an immutable revision belongs in packaged provenance. A nested
+        # relative path input can inherit dirtyRev from its parent flake, which
+        # would otherwise misidentify the parent repository as this source.
+        flakeSourceCommit = self.rev or "";
         flakeSourceRemote = "https://github.com/ilysenko/codex-desktop-linux.git";
         flakeSourceDateEpoch = toString (self.lastModified or 1);
         sourceRoot = pkgs.lib.cleanSourceWith {

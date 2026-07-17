@@ -35,6 +35,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- Nix packages no longer record an inherited parent-flake `dirtyRev` as the
+  codex-desktop-linux source commit when built from a nested relative path
+  input. Vendored path snapshots now leave embedded Git provenance unknown and
+  rely on their external promotion manifest for the exact source identity.
 - Webview descriptors can now require fixed output markers. A matching filename
   with no recognized patch output is reported as drift instead of
   `already-applied`, and multi-asset edits are committed only after every
