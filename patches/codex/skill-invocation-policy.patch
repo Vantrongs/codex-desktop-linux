@@ -199,7 +199,7 @@ index 4999a07..03208f7 100644
 @@ -4,4 +4,4 @@
  import type { AbsolutePathBuf } from "../AbsolutePathBuf";
  import type { SkillInterface } from "./SkillInterface";
- 
+
 -export type SkillSummary = { name: string, description: string, shortDescription: string | null, interface: SkillInterface | null, path: AbsolutePathBuf | null, enabled: boolean, };
 +export type SkillSummary = { name: string, description: string, shortDescription: string | null, interface: SkillInterface | null, path: AbsolutePathBuf | null, enabled: boolean, allowImplicitInvocation: boolean, };
 diff --git a/app-server-protocol/schema/typescript/v2/SkillsConfigWriteParams.ts b/app-server-protocol/schema/typescript/v2/SkillsConfigWriteParams.ts
@@ -222,7 +222,7 @@ index 9bd53b5..b999851 100644
      pub enabled: bool,
 +    pub allow_implicit_invocation: bool,
  }
- 
+
  #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 @@ -706,6 +707,7 @@ pub struct SkillSummary {
      pub interface: Option<SkillInterface>,
@@ -230,7 +230,7 @@ index 9bd53b5..b999851 100644
      pub enabled: bool,
 +    pub allow_implicit_invocation: bool,
  }
- 
+
  #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 @@ -784,6 +786,8 @@ pub struct SkillsConfigWriteParams {
      #[ts(optional = nullable)]
@@ -239,7 +239,7 @@ index 9bd53b5..b999851 100644
 +    #[ts(optional = nullable)]
 +    pub allow_implicit_invocation: Option<bool>,
  }
- 
+
  #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 @@ -835,6 +839,7 @@ impl From<CoreSkillMetadata> for SkillMetadata {
              path: value.path,
@@ -255,7 +255,7 @@ index 6cb4385..e13ae7c 100644
 +++ b/app-server/src/request_processors/catalog_processor.rs
 @@ -16,13 +16,13 @@ pub(crate) struct CatalogRequestProcessor {
  const SKILLS_LIST_CWD_CONCURRENCY: usize = 5;
- 
+
  fn skills_to_info(
 -    skills: &[codex_core::skills::SkillMetadata],
 -    disabled_paths: &HashSet<AbsolutePathBuf>,
@@ -343,7 +343,7 @@ index 948b906..0e7c170 100644
 +    #[serde(default, skip_serializing_if = "Option::is_none")]
 +    pub allow_implicit_invocation: Option<bool>,
  }
- 
+
  #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
 diff --git a/config/src/types_tests.rs b/config/src/types_tests.rs
 index 2c3f69d..88af22f 100644
@@ -357,7 +357,7 @@ index 2c3f69d..88af22f 100644
          }
      );
  }
- 
+
 +#[test]
 +fn deserialize_skill_config_with_implicit_invocation_override() {
 +    let cfg: SkillConfig = toml::from_str(
@@ -392,7 +392,7 @@ index 2b5c478..059dffb 100644
 @@ -878,7 +879,8 @@ impl PluginSkillInventory {
          )
      }
- 
+
 -    fn resolve(self, skill_config_rules: &SkillConfigRules) -> ResolvedPluginSkills {
 +    fn resolve(mut self, skill_config_rules: &SkillConfigRules) -> ResolvedPluginSkills {
 +        apply_implicit_invocation_overrides(&mut self.skills, skill_config_rules);
@@ -409,7 +409,7 @@ index 05f3e48..cba3681 100644
      pub enabled: bool,
 +    pub allow_implicit_invocation: Option<bool>,
  }
- 
+
  #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 @@ -57,10 +58,17 @@ pub fn skill_config_rules_from_stack(config_layer_stack: &ConfigLayerStack) -> S
              };
@@ -432,7 +432,7 @@ index 05f3e48..cba3681 100644
 @@ -68,6 +76,23 @@ pub fn skill_config_rules_from_stack(config_layer_stack: &ConfigLayerStack) -> S
      SkillConfigRules { entries }
  }
- 
+
 +pub fn apply_implicit_invocation_overrides(skills: &mut [SkillMetadata], rules: &SkillConfigRules) {
 +    for entry in &rules.entries {
 +        let Some(allow_implicit_invocation) = entry.allow_implicit_invocation else {
@@ -490,7 +490,7 @@ index 6026975..7e2ebc5 100644
 @@ -163,6 +164,21 @@ enabled = {enabled}
      )
  }
- 
+
 +fn path_policy_config(
 +    path: &std::path::Path,
 +    enabled: bool,
@@ -512,7 +512,7 @@ index 6026975..7e2ebc5 100644
 @@ -667,6 +683,44 @@ fn disabled_paths_for_skills_allows_session_flags_to_override_user_layer() {
      );
  }
- 
+
 +#[cfg_attr(windows, ignore)]
 +#[test]
 +fn implicit_invocation_override_survives_later_enabled_only_layer() {
@@ -612,7 +612,7 @@ index 2d7a413..6cac20f 100644
 @@ -450,7 +470,12 @@ impl ConfigDocument {
          true
      }
- 
+
 -    fn set_skill_config(&mut self, selector: SkillConfigSelector, enabled: bool) -> bool {
 +    fn set_skill_config(
 +        &mut self,
@@ -634,7 +634,7 @@ index 2d7a413..6cac20f 100644
                      root.insert(
 @@ -483,7 +508,7 @@ impl ConfigDocument {
              };
- 
+
              if document_helpers::ensure_table_for_write(skills_item).is_none() {
 -                if enabled {
 +                if enabled && allow_implicit_invocation.is_none() {
@@ -652,7 +652,7 @@ index 2d7a413..6cac20f 100644
                      skills_table.insert("config", TomlItem::ArrayOfTables(ArrayOfTables::new()));
 @@ -507,7 +532,7 @@ impl ConfigDocument {
              };
- 
+
              if !matches!(config_item, TomlItem::ArrayOfTables(_)) {
 -                if enabled {
 +                if enabled && allow_implicit_invocation.is_none() {
@@ -662,7 +662,7 @@ index 2d7a413..6cac20f 100644
 @@ -523,7 +548,16 @@ impl ConfigDocument {
                      .map(|_| idx)
              });
- 
+
 -            if enabled {
 +            let existing_allow_implicit_invocation = existing_index.and_then(|index| {
 +                overrides
@@ -733,7 +733,7 @@ index d47f128..78bf32e 100644
 @@ -360,6 +363,48 @@ enabled = false
      assert_eq!(contents, expected);
  }
- 
+
 +#[test]
 +fn set_skill_config_preserves_manual_only_policy_across_enabled_toggles() {
 +    let tmp = tempdir().expect("tmpdir");
