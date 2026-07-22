@@ -381,10 +381,9 @@ diff --git a/core-plugins/src/loader.rs b/core-plugins/src/loader.rs
 index 2b5c478..059dffb 100644
 --- a/core-plugins/src/loader.rs
 +++ b/core-plugins/src/loader.rs
-@@ -27,6 +27,7 @@ use codex_connectors::parse_plugin_app_config_value;
+@@ -27,5 +27,6 @@ use codex_connectors::parse_plugin_app_config;
+ use codex_connectors::parse_plugin_app_config_value;
  use codex_core_skills::PluginSkillSnapshots;
- use codex_core_skills::SkillMetadata;
- use codex_core_skills::config_rules::SkillConfigRules;
 +use codex_core_skills::config_rules::apply_implicit_invocation_overrides;
  use codex_core_skills::config_rules::resolve_disabled_skill_paths;
  use codex_core_skills::config_rules::skill_config_rules_from_stack;
@@ -399,11 +398,11 @@ index 2b5c478..059dffb 100644
          let disabled_skill_paths = resolve_disabled_skill_paths(&self.skills, skill_config_rules);
          ResolvedPluginSkills {
              skills: self.skills,
-diff --git a/core-skills/src/config_rules.rs b/core-skills/src/config_rules.rs
-index 05f3e48..cba3681 100644
---- a/core-skills/src/config_rules.rs
-+++ b/core-skills/src/config_rules.rs
-@@ -20,6 +20,7 @@ pub enum SkillConfigRuleSelector {
+diff --git a/skills/src/model.rs b/skills/src/model.rs
+index 54d4229..c9a6fd5 100644
+--- a/skills/src/model.rs
++++ b/skills/src/model.rs
+@@ -99,6 +99,7 @@ pub enum SkillConfigRuleSelector {
  pub struct SkillConfigRule {
      pub selector: SkillConfigRuleSelector,
      pub enabled: bool,
@@ -411,6 +410,10 @@ index 05f3e48..cba3681 100644
  }
 
  #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+diff --git a/core-skills/src/config_rules.rs b/core-skills/src/config_rules.rs
+index 05f3e48..cba3681 100644
+--- a/core-skills/src/config_rules.rs
++++ b/core-skills/src/config_rules.rs
 @@ -57,10 +58,17 @@ pub fn skill_config_rules_from_stack(config_layer_stack: &ConfigLayerStack) -> S
              };
              // Preserve layer order so a later name selector can override an earlier path selector
@@ -457,18 +460,15 @@ diff --git a/core-skills/src/service.rs b/core-skills/src/service.rs
 index b4e0d73..986ba0f 100644
 --- a/core-skills/src/service.rs
 +++ b/core-skills/src/service.rs
-@@ -18,6 +18,7 @@ use crate::PluginSkillSnapshots;
- use crate::SkillLoadOutcome;
- use crate::build_implicit_skill_path_indexes;
+@@ -21,2 +21,3 @@ use crate::build_implicit_skill_path_indexes;
  use crate::config_rules::SkillConfigRules;
 +use crate::config_rules::apply_implicit_invocation_overrides;
  use crate::config_rules::resolve_disabled_skill_paths;
- use crate::config_rules::skill_config_rules_from_stack;
- use crate::loader::SkillRoot;
-@@ -214,8 +215,9 @@ impl SkillsService {
-         skill_config_rules: &SkillConfigRules,
-     ) -> SkillLoadOutcome {
-         let outcome = load_skills_from_roots(roots, input.plugin_skill_snapshots.as_ref()).await;
+@@ -222,9 +223,10 @@ impl SkillsService {
+             input.plugin_skill_snapshots.as_ref(),
+             Arc::clone(&self.root_scan_slots),
+         )
+         .await;
 -        let outcome =
 +        let mut outcome =
              crate::filter_skill_load_outcome_for_product(outcome, self.restriction_product);
