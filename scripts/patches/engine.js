@@ -18,6 +18,7 @@ const {
 } = require("../lib/linux-target-context.js");
 const {
   patchAssetFiles,
+  patchUniqueAssetFile,
 } = require("./lib/assets.js");
 const {
   CI_POLICIES,
@@ -49,6 +50,9 @@ function normalizeDescriptor(descriptor, sourcePath = null, index = 0) {
   }
   if (typeof descriptor.apply !== "function") {
     throw new Error(`Patch descriptor '${id}' must export an apply function`);
+  }
+  if (descriptor.assetMatch != null && typeof descriptor.assetMatch !== "function") {
+    throw new Error(`Patch descriptor '${id}' assetMatch must be a function`);
   }
   const ciPolicy = descriptor.ciPolicy ?? OPTIONAL;
   if (!CI_POLICIES.has(ciPolicy)) {
@@ -307,6 +311,19 @@ function defaultWebviewMissingWarning(extractedDir, descriptor) {
   return `WARN: Could not find ${missingDescription} in ${path.join(extractedDir, "webview", "assets")} — skipping ${skipDescription}`;
 }
 
+function defaultWebviewAmbiguousWarning(extractedDir, descriptor) {
+  const missingDescription = descriptor.missingDescription ?? "webview asset bundle";
+  const skipDescription = descriptor.skipDescription ?? descriptor.id;
+  return `WARN: Found multiple ${missingDescription} contracts in ${path.join(extractedDir, "webview", "assets")} — skipping ${skipDescription}`;
+}
+
+function assetPatchMetadata(patchResult, strategies) {
+  return {
+    ...(patchResult.assetName == null ? {} : { assetName: patchResult.assetName }),
+    ...(strategyMetadata(strategies) ?? {}),
+  };
+}
+
 function recordAssetDescriptorPatch(report, descriptor, patchResult, warnings, context, strategies = null) {
   if (patchResult.matched === 0) {
     recordDescriptorPatch(
@@ -315,7 +332,7 @@ function recordAssetDescriptorPatch(report, descriptor, patchResult, warnings, c
       descriptorFailureStatus(descriptor),
       warnings[0] ?? "no matching bundle found",
       context,
-      strategyMetadata(strategies),
+      assetPatchMetadata(patchResult, strategies),
     );
     return;
   }
@@ -327,7 +344,7 @@ function recordAssetDescriptorPatch(report, descriptor, patchResult, warnings, c
       warnings[0] ?? "required webview patch markers were not verified",
       context,
       {
-        ...(strategyMetadata(strategies) ?? {}),
+        ...assetPatchMetadata(patchResult, strategies),
         markerCounts: patchResult.markerCounts,
         attemptedChanged: patchResult.attemptedChanged,
       },
@@ -340,7 +357,7 @@ function recordAssetDescriptorPatch(report, descriptor, patchResult, warnings, c
     patchStatusFromDescriptorChange(descriptor, patchResult.changed > 0, warnings),
     warnings[0] ?? null,
     context,
-    strategyMetadata(strategies),
+    assetPatchMetadata(patchResult, strategies),
   );
 }
 
@@ -361,21 +378,36 @@ function applyWebviewAssetPatchDescriptors(extractedDir, descriptors, context, r
     }
     const missingWarning = descriptor.missingWarning ??
       defaultWebviewMissingWarning(extractedDir, descriptor);
+    const ambiguousWarning = descriptor.ambiguousWarning ??
+      defaultWebviewAmbiguousWarning(extractedDir, descriptor);
     const verificationWarnMessage =
       `WARN: Webview asset patch '${descriptor.id}' did not produce exactly one copy of each required marker — skipping ${descriptor.skipDescription ?? descriptor.id}`;
     const { value: result, warnings, error, strategies } = runDescriptorApply(
       descriptor,
-      () => patchAssetFiles(
-        extractedDir,
-        pattern,
-        (source) => descriptor.apply(source, context),
-        missingWarning,
-        {
-          requiredMarkers: descriptor.requiredMarkers,
-          verificationWarnMessage,
-        },
-      ),
-      { matched: 0, changed: 0 },
+      () => descriptor.assetMatch == null
+        ? patchAssetFiles(
+          extractedDir,
+          pattern,
+          (source) => descriptor.apply(source, context),
+          missingWarning,
+          {
+            requiredMarkers: descriptor.requiredMarkers,
+            verificationWarnMessage,
+          },
+        )
+        : patchUniqueAssetFile(
+          extractedDir,
+          pattern,
+          (source, assetName) => descriptor.assetMatch(source, assetName, context),
+          (source) => descriptor.apply(source, context),
+          missingWarning,
+          ambiguousWarning,
+          {
+            requiredMarkers: descriptor.requiredMarkers,
+            verificationWarnMessage,
+          },
+        ),
+      { matched: 0, changed: 0, assetName: null },
     );
     context.reportWarnings = warnings;
     if (error != null) {

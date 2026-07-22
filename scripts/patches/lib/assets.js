@@ -40,6 +40,40 @@ function countOccurrences(source, marker) {
   return count;
 }
 
+function verifyRequiredMarkers(patchedAssets, options) {
+  const requiredMarkers = options.requiredMarkers ?? [];
+  if (requiredMarkers.length === 0) {
+    return null;
+  }
+  if (
+    !Array.isArray(requiredMarkers) ||
+    requiredMarkers.some((marker) => typeof marker !== "string" || marker.length === 0)
+  ) {
+    throw new Error("requiredMarkers must be an array of non-empty strings");
+  }
+
+  const markerCounts = Object.fromEntries(
+    requiredMarkers.map((marker) => [
+      marker,
+      patchedAssets.reduce(
+        (count, patchedSource) => count + countOccurrences(patchedSource, marker),
+        0,
+      ),
+    ]),
+  );
+  const invalidMarkers = requiredMarkers.filter((marker) => markerCounts[marker] !== 1);
+  if (invalidMarkers.length > 0) {
+    const details = invalidMarkers
+      .map((marker) => `${marker}=${markerCounts[marker]}`)
+      .join(", ");
+    console.warn(
+      `${options.verificationWarnMessage ?? "WARN: Webview asset patch marker verification failed"} (${details})`,
+    );
+    return { verified: false, markerCounts };
+  }
+  return { verified: true, markerCounts };
+}
+
 function patchAssetFiles(
   extractedDir,
   filenamePattern,
@@ -77,48 +111,23 @@ function patchAssetFiles(
     }
   }
 
-  const requiredMarkers = options.requiredMarkers ?? [];
-  if (requiredMarkers.length > 0) {
-    if (
-      !Array.isArray(requiredMarkers) ||
-      requiredMarkers.some((marker) => typeof marker !== "string" || marker.length === 0)
-    ) {
-      throw new Error("requiredMarkers must be an array of non-empty strings");
-    }
-    const markerCounts = Object.fromEntries(
-      requiredMarkers.map((marker) => [
-        marker,
-        patchedAssets.reduce(
-          (count, patchedSource) => count + countOccurrences(patchedSource, marker),
-          0,
-        ),
-      ]),
-    );
-    const invalidMarkers = requiredMarkers.filter((marker) => markerCounts[marker] !== 1);
-    if (invalidMarkers.length > 0) {
-      const details = invalidMarkers
-        .map((marker) => `${marker}=${markerCounts[marker]}`)
-        .join(", ");
-      console.warn(
-        `${options.verificationWarnMessage ?? "WARN: Webview asset patch marker verification failed"} (${details})`,
-      );
-      return {
-        matched: candidates.length,
-        changed: 0,
-        attemptedChanged: pendingWrites.length,
-        verified: false,
-        markerCounts,
-      };
-    }
-
+  const markerVerification = verifyRequiredMarkers(patchedAssets, options);
+  if (markerVerification?.verified === false) {
+    return {
+      matched: candidates.length,
+      changed: 0,
+      attemptedChanged: pendingWrites.length,
+      ...markerVerification,
+    };
+  }
+  if (markerVerification != null) {
     for (const { filePath, patchedSource } of pendingWrites) {
       fs.writeFileSync(filePath, patchedSource, "utf8");
     }
     return {
       matched: candidates.length,
       changed: pendingWrites.length,
-      verified: true,
-      markerCounts,
+      ...markerVerification,
     };
   }
 
@@ -127,6 +136,61 @@ function patchAssetFiles(
   }
 
   return { matched: candidates.length, changed: pendingWrites.length };
+}
+
+function patchUniqueAssetFile(
+  extractedDir,
+  filenamePattern,
+  assetMatch,
+  patchFn,
+  missingWarnMessage,
+  ambiguousWarnMessage,
+  options = {},
+) {
+  const webviewAssetsDir = path.join(extractedDir, "webview", "assets");
+  if (!fs.existsSync(webviewAssetsDir)) {
+    console.warn(
+      `WARN: Could not find webview assets directory in ${webviewAssetsDir} — skipping asset patch`,
+    );
+    return { matched: 0, changed: 0, assetName: null };
+  }
+
+  const matches = fs
+    .readdirSync(webviewAssetsDir)
+    .filter((name) => regexpTest(filenamePattern, name))
+    .sort()
+    .map((assetName) => ({
+      assetName,
+      source: fs.readFileSync(path.join(webviewAssetsDir, assetName), "utf8"),
+    }))
+    .filter(({ assetName, source }) => assetMatch(source, assetName));
+
+  if (matches.length === 0) {
+    console.warn(missingWarnMessage);
+    return { matched: 0, changed: 0, assetName: null };
+  }
+  if (matches.length !== 1) {
+    console.warn(`${ambiguousWarnMessage}: ${matches.map(({ assetName }) => assetName).join(", ")}`);
+    return { matched: matches.length, changed: 0, assetName: null };
+  }
+
+  const [{ assetName, source }] = matches;
+  const patchedSource = patchFn(source);
+  const markerVerification = verifyRequiredMarkers([patchedSource], options);
+  if (markerVerification?.verified === false) {
+    return {
+      matched: 1,
+      changed: 0,
+      attemptedChanged: patchedSource === source ? 0 : 1,
+      assetName,
+      ...markerVerification,
+    };
+  }
+  if (patchedSource === source) {
+    return { matched: 1, changed: 0, assetName, ...(markerVerification ?? {}) };
+  }
+  fs.writeFileSync(path.join(webviewAssetsDir, assetName), patchedSource, "utf8");
+  return { matched: 1, changed: 1, assetName, ...(markerVerification ?? {}) };
 }
 
 function readWebviewAsset(webviewAssetsDir, assetName) {
@@ -232,6 +296,7 @@ module.exports = {
   findMainBundle,
   findRequiredWebviewAsset,
   patchAssetFiles,
+  patchUniqueAssetFile,
   readDirectoryNames,
   readWebviewAsset,
 };

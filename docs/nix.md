@@ -218,6 +218,7 @@ The Home Manager and NixOS modules accept these feature IDs through
 | --- | --- |
 | `appshots` | Linux AppShots capture integration |
 | `codex-wrapper-updater` | Separate in-app update path for this Linux wrapper and its feature set |
+| `directory-only-working-tree-watch` | Bounded directory-only working-tree watches; conflicts with `shallow-repository-watches` |
 | `frameless-titlebar` | Hide app-provided titlebar controls for compositor-managed decorations |
 | `global-dictation` | Global dictation shortcuts through X11 helpers or Wayland portals |
 | `mcp-helper-reaper` | Cleanup for stale configured MCP helper processes |
@@ -228,6 +229,7 @@ The Home Manager and NixOS modules accept these feature IDs through
 | `plugin-update-button` | Update an installed Git-sourced plugin using source refresh plus atomic reinstall |
 | `remote-control-ui` | Open the upstream Remote Control UI gates on Linux without faking backend state |
 | `remote-mobile-control` | Experimental Linux Remote host and outbound-control adaptation |
+| `shallow-repository-watches` | Limit repository previews to bounded, shallow directory watches; conflicts with `directory-only-working-tree-watch` |
 | `skill-invocation-policy` | Separate automatic/manual-only policy control and `$`/`!` Skill menus; requires a compatible CLI |
 | `ui-tweaks` | Optional shared UI customizations with declarative feature settings |
 
@@ -299,4 +301,5 @@ When a merge to `main` changes the pinned `Codex.dmg` hash, the `Populate
 Cachix` workflow builds the default package, feature-specific package variants,
 the watchdog feature check, and `.#installer`. It uploads and garbage-collects
 each output before starting the next one so the hosted runner does not retain
-every large app variant at once.
+every large app variant at once. Maintainers can dispatch the workflow manually
+to backfill the current `main` pin after a skipped or interrupted run.

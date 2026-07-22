@@ -3,6 +3,7 @@ let
   supportedFeatureIds = [
     "appshots"
     "codex-wrapper-updater"
+    "directory-only-working-tree-watch"
     "frameless-titlebar"
     "global-dictation"
     "mcp-helper-reaper"
@@ -13,6 +14,7 @@ let
     "plugin-update-button"
     "remote-control-ui"
     "remote-mobile-control"
+    "shallow-repository-watches"
     "skill-invocation-policy"
     "ui-tweaks"
   ];

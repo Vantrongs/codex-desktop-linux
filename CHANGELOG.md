@@ -45,23 +45,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   required marker appears exactly once.
 - The opt-in Computer Use UI now patches the Electron 42 settings-card query
   shape and the rechunked plugin-detail install flow. Both paths carry verified
-  fixed markers, remain atomic and idempotent, and backfill markers onto a
-  complete structurally patched asset from an older build.
+  fixed markers and remain atomic and idempotent.
 - Computer Use readiness now recognizes the installed `ydotool 1.0.4` command
   set by checking its actual raw-key and absolute-pointer capabilities instead
   of requiring the unrelated `stdin` subcommand.
-- Private upstream-sync issue automation now mutates only issues carrying its
-  hidden ownership marker and never changes a `workflow: manual only` issue.
-  New automation-owned issues receive the complete repository label set.
 - The current Electron 42 upstream Linux tray factory now obeys the existing
   `codex-linux-system-tray-enabled` setting at startup instead of creating the
   tray unconditionally. The setting remains fail-open when the Linux helper is
-  absent, preserving compatibility with older generated bundles.
+  absent.
 - The opt-in Git plugin update and Skill invocation-policy controls now match
   the current Electron 42 React-compiled plugin detail page and split composer
   chunks. The Nix payload acceptance check verifies exactly one patched Skill
   trigger registration, trigger parser, composer filter, and combined plugin
   detail asset in the package it builds.
+- V2 pets now look toward the live pointer position after successful Linux
+  Computer Use click, scroll, and drag actions, then return to their normal
+  animation. The bridge is isolated per app instance and fails softly when its
+  private runtime socket is unavailable.
 - The updater daemon now detects that a package upgrade replaced its binary
   on disk and exits with a nonzero status so systemd's `Restart=on-failure`
   relaunches it on the new binary. Previously a running daemon survived every
