@@ -37,6 +37,7 @@ function currentPluginDetailFixture() {
     "async function ka({hostId:e,...t}){let{plugin:n}=await ve(`read-plugin`,{hostId:e??`local`,...t});return n}",
     "function Gl(e){let t=(0,du.c)(387),{hostId:a,pluginName:o,marketplacePath:s,parentPage:f}=e===void 0?{}:e,m=f===void 0?`plugins`:f,[k,A]=(0,fu.useState)(null),B=a??`local`,",
     "{directMarketplacePath:ue}=Fe({explicitMarketplacePath:s}),U=ue??fallbackPath,{plugin:K,refetch:ft}=ke({hostId:B,marketplacePath:U,pluginName:o}),",
+    "Ut=async()=>{await uu({hostId:B,invalidateQueriesAndBroadcast:O,marketplacePath:U,pluginName:o})},t[45]=B,t[46]=O,t[47]=U,t[48]=o,t[49]=Ut;let Wt=Ut,Vt;",
     "Vt=async()=>{await uu({hostId:B,invalidateQueriesAndBroadcast:O,marketplacePath:U,pluginName:o,refetchPluginDetail:ft})},Ht=(0,fu.useEffectEvent)(Vt),",
     "xi=K!=null&&In===K.summary.id,Si=K!=null&&Nn===K.summary.id;let na=K!=null?(0,$.jsx)(ts,{blockedReason:null,isInstalled:K.summary.installed,isUninstalling:xi,isUpdatingEnabled:Si,shareActions:null,onInstall:()=>{}}):null;return na}",
     "function eu(){}",
@@ -224,6 +225,24 @@ test("patches the Electron 42 React-compiled plugin detail component", () => {
   assert.match(patched, /shareActions:\(0,\$\.jsx\)\(codexLinuxGitPluginUpdateButton/);
   assert.match(patched, /marketplacePath:K\.marketplacePath\?\?U/);
   assert.match(patched, /onBusyChange:setCodexLinuxGitPluginUpdateBusyV1,onUpdated:Ht/);
+});
+
+test("patch fails closed when refetch belongs to a neighboring callback", () => {
+  const source = currentPluginDetailFixture().replace(
+    "Vt=async()=>{await uu({hostId:B,invalidateQueriesAndBroadcast:O,marketplacePath:U,pluginName:o,refetchPluginDetail:ft})},Ht=(0,fu.useEffectEvent)(Vt),",
+    "Ht=(0,fu.useEffectEvent)(Ut),Vt=()=>{uu({hostId:B,refetchPluginDetail:ft})},",
+  );
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (message) => warnings.push(message);
+  try {
+    assert.equal(applyPluginUpdateButtonPatch(source), source);
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.deepEqual(warnings, [
+    "WARN: Could not resolve the current plugin detail component - skipping Git plugin update button patch",
+  ]);
 });
 
 test("patch is fail-soft when the complete action contract is absent", () => {

@@ -220,6 +220,8 @@ test("descriptors target the Skill card and main composer chunks", () => {
     ),
     true,
   );
+  assert.equal(descriptors[1].pattern.test("app-initial-BHB6SClA.js"), true);
+  assert.equal(descriptors[1].pattern.test("app-initial-Czet5G9g.css"), false);
   assert.equal(descriptors[1].pattern.test("plugin-detail-page-DmxssFl8.js"), false);
 });
 
@@ -466,7 +468,7 @@ test("enabled descriptor patches a matching extracted webview asset", () => {
     const assetPath = path.join(assetsDir, "plugin-detail-page-fixture.js");
     const composerPath = path.join(
       assetsDir,
-      "app-initial~artifact-tab-content.electron~app-main~pull-request-code-review~new-thread-pane~fixture.js",
+      "app-initial-BHB6SClA.js",
     );
     const decoyPath = path.join(assetsDir, "skills-page-decoy.js");
     fs.mkdirSync(assetsDir, { recursive: true });

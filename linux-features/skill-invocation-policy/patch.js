@@ -503,7 +503,7 @@ const descriptors = [
     phase: "webview-asset",
     order: 20_681,
     ciPolicy: "opt-in",
-    pattern: /^app-initial~artifact-tab-content\.electron~app-main~.*\.js$/,
+    pattern: /^app-initial(?:~artifact-tab-content\.electron~app-main~.*|-[A-Za-z0-9_-]+)\.js$/,
     missingDescription: "main composer trigger and Skill mention webview bundles",
     skipDescription: "manual-only Skill composer menu patch",
     requiredMarkers: [

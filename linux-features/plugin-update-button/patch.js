@@ -24,6 +24,10 @@ function countOccurrences(source, needle) {
   return count;
 }
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function pluginUpdateRuntimeSource({ bridgeVar, jsxVar, reactVar }) {
   return [
     `const ${PATCH_MARKER}=!0;`,
@@ -178,20 +182,34 @@ function findReactCompiledPluginDetailBinding(source) {
 
   const hostIdVar = hostIdMatch[1];
   const refetchVar = pluginMatch[2];
-  const refreshAsyncMatch = block.match(
-    new RegExp(
-      `(${JS_IDENT})=async\\(\\)=>\\{await [\\s\\S]{0,600}?hostId:${hostIdVar},` +
-        `[\\s\\S]{0,600}?refetchPluginDetail:${refetchVar}\\}\\)\\}`,
-    ),
-  );
-  const refreshEventMatch = refreshAsyncMatch == null
-    ? null
-    : block.match(
-      new RegExp(
-        `(${JS_IDENT})=\\(0,${reactMatch[1]}\\.useEffectEvent\\)\\(${refreshAsyncMatch[1]}\\)`,
-      ),
-    );
-  if (refreshEventMatch == null) {
+  const refetchAnchor = `refetchPluginDetail:${refetchVar}`;
+  const refreshEventVars = [];
+  const refreshAsyncPattern = new RegExp(`(${JS_IDENT})=async\\(\\)=>\\{`, "g");
+  let refreshAsyncMatch;
+  while ((refreshAsyncMatch = refreshAsyncPattern.exec(block)) != null) {
+    const openIndex = refreshAsyncMatch.index + refreshAsyncMatch[0].length - 1;
+    const closeIndex = findMatchingBrace(block, openIndex);
+    if (closeIndex === -1) {
+      continue;
+    }
+    const refreshBlock = block.slice(refreshAsyncMatch.index, closeIndex + 1);
+    if (
+      refreshBlock.includes(`hostId:${hostIdVar},`) &&
+      refreshBlock.includes(refetchAnchor)
+    ) {
+      const refreshEventMatch = block.match(
+        new RegExp(
+          `(${JS_IDENT})=\\(0,${escapeRegExp(reactMatch[1])}\\.useEffectEvent\\)` +
+            `\\(${escapeRegExp(refreshAsyncMatch[1])}\\)`,
+        ),
+      );
+      if (refreshEventMatch != null) {
+        refreshEventVars.push(refreshEventMatch[1]);
+      }
+    }
+  }
+  const uniqueRefreshEventVars = [...new Set(refreshEventVars)];
+  if (uniqueRefreshEventVars.length !== 1) {
     return null;
   }
 
@@ -205,7 +223,7 @@ function findReactCompiledPluginDetailBinding(source) {
     marketplacePathVar: marketplacePathMatch[1],
     pluginVar: pluginMatch[1],
     reactVar: reactMatch[1],
-    refreshVar: refreshEventMatch[1],
+    refreshVar: uniqueRefreshEventVars[0],
     stateAnchor: header,
     stateReplacement:
       `${header}let [${PARENT_BUSY_STATE},${PARENT_BUSY_SETTER}]=` +
