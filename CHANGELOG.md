@@ -58,6 +58,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   chunks. The Nix payload acceptance check verifies exactly one patched Skill
   trigger registration, trigger parser, composer filter, and combined plugin
   detail asset in the package it builds.
+- Concurrent updater entrypoints now serialize state reloads and cache cleanup
+  before persisting startup state. A second process can no longer prune an
+  active rebuild workspace, while forced checks wait for startup maintenance
+  instead of returning without checking upstream, and manual ready-package
+  installs cannot race daemon reconciliation into launching the same install
+  twice.
+- Updater rebuild workspaces now retain the Git identity of the wrapper source
+  after `.git` is stripped, so installed build metadata and packaged
+  update-builder metadata report the wrapper commit instead of `unknown`.
 - V2 pets now look toward the live pointer position after successful Linux
   Computer Use click, scroll, and drag actions, then return to their normal
   animation. The bridge is isolated per app instance and fails softly when its
