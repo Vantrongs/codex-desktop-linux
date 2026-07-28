@@ -1020,6 +1020,7 @@ test("default core patch descriptors are grouped and unique", () => {
     "linux-browser-use-route-liveness",
     "linux-notification-actions",
     "linux-process-registry-durability",
+    "linux-renderer-crash-diagnostics",
     "linux-local-app-server-feature-enablement-handler",
     "linux-remote-control-config-preservation",
     "linux-app-updater-menu",

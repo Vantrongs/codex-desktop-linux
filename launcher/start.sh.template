@@ -42,6 +42,37 @@ codex_run_host_command() (
 # Capture before package-specific launcher patches add application runtime paths.
 codex_capture_original_ld_library_path
 
+# Electron renderers can map tens of GiB. Keep ELF headers for a useful, small
+# core while excluding anonymous renderer memory from the kernel core stream.
+# The mask is inherited by Electron and every process it launches.
+configure_codex_coredump_filter() {
+    local filter_file="${1:-/proc/self/coredump_filter}"
+    local actual_filter=""
+
+    [ -e "$filter_file" ] || {
+        printf '%s\n' "ERROR: Codex core dump filter is unavailable: $filter_file" >&2
+        return 1
+    }
+    [ -w "$filter_file" ] || {
+        printf '%s\n' "ERROR: Codex core dump filter is not writable: $filter_file" >&2
+        return 1
+    }
+    if ! printf '%s\n' 0x10 > "$filter_file"; then
+        printf '%s\n' "ERROR: failed to set Codex core dump filter: $filter_file" >&2
+        return 1
+    fi
+    if ! IFS= read -r actual_filter < "$filter_file"; then
+        printf '%s\n' "ERROR: failed to verify Codex core dump filter: $filter_file" >&2
+        return 1
+    fi
+    if [ "$actual_filter" != "00000010" ]; then
+        printf '%s\n' "ERROR: Codex core dump filter verification returned '$actual_filter' instead of '00000010'" >&2
+        return 1
+    fi
+}
+
+configure_codex_coredump_filter
+
 resolve_script_dir() {
     local source="${BASH_SOURCE[0]}"
     local dir
@@ -76,6 +107,190 @@ CODEX_LINUX_SETTINGS_FILE="$APP_SETTINGS_FILE"
 CODEX_LINUX_FEATURES_DIR="$SCRIPT_DIR/.codex-linux/features"
 export CODEX_HOME CODEX_LINUX_APP_ID CODEX_LINUX_APP_DISPLAY_NAME CODEX_LINUX_WEBVIEW_PORT CODEX_LINUX_SETTINGS_FILE CODEX_LINUX_FEATURES_DIR
 APP_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/$CODEX_LINUX_APP_ID"
+
+launcher_log_max_bytes() {
+    local max_bytes="${CODEX_LINUX_LAUNCHER_LOG_MAX_BYTES:-33554432}"
+    case "$max_bytes" in
+        ""|*[!0-9]*)
+            printf '%s\n' "WARN: invalid CODEX_LINUX_LAUNCHER_LOG_MAX_BYTES='$max_bytes'; using 33554432" >&2
+            max_bytes=33554432
+            ;;
+    esac
+    if [ "$max_bytes" -lt 65536 ]; then
+        printf '%s\n' "WARN: CODEX_LINUX_LAUNCHER_LOG_MAX_BYTES=$max_bytes is below 65536; using 65536" >&2
+        max_bytes=65536
+    fi
+    printf '%s\n' "$max_bytes"
+}
+
+# The long-lived Electron tree writes through this process instead of keeping a
+# launcher.log descriptor open. Every chunk is serialized with other launchers,
+# the current path is reopened after each lock acquisition, and rotation is an
+# atomic rename rather than a copy. Current + previous therefore stay bounded
+# even while the app is running or two launchers overlap.
+start_bounded_launcher_logging() {
+    local max_bytes
+    local log_pipe
+    max_bytes="$(launcher_log_max_bytes)"
+    log_pipe="${APP_STATE_DIR:-$(dirname "$LOG_FILE")}/launcher-log.$$.pipe"
+
+    rm -f -- "$log_pipe"
+    if ! mkfifo -m 600 "$log_pipe"; then
+        printf '%s\n' "ERROR: could not create bounded launcher log pipe: $log_pipe" >&2
+        return 1
+    fi
+    LAUNCHER_LOG_PIPE="$log_pipe"
+    python3 -c '
+import fcntl
+import os
+import stat
+import sys
+
+log_path = sys.argv[1]
+max_bytes = int(sys.argv[2])
+previous_path = f"{log_path}.previous"
+lock_path = f"{log_path}.lock"
+chunk_size = min(65536, max_bytes)
+os.umask(0o077)
+
+
+def write_all(file_descriptor, payload):
+    view = memoryview(payload)
+    while view:
+        written = os.write(file_descriptor, view)
+        if written <= 0:
+            raise OSError("short launcher log write")
+        view = view[written:]
+
+
+def remove_unsafe_node(file_path):
+    try:
+        file_stat = os.lstat(file_path)
+    except FileNotFoundError:
+        return
+    if stat.S_ISREG(file_stat.st_mode) and file_stat.st_nlink == 1:
+        return
+    if stat.S_ISDIR(file_stat.st_mode):
+        raise IsADirectoryError(file_path)
+    os.unlink(file_path)
+
+
+def open_regular_file(file_path, flags, mode=0o600):
+    remove_unsafe_node(file_path)
+    safe_flags = flags | os.O_NOFOLLOW | os.O_NONBLOCK
+    if hasattr(os, "O_CLOEXEC"):
+        safe_flags |= os.O_CLOEXEC
+    file_descriptor = os.open(file_path, safe_flags, mode)
+    try:
+        opened_stat = os.fstat(file_descriptor)
+        if not stat.S_ISREG(opened_stat.st_mode) or opened_stat.st_nlink != 1:
+            raise OSError(f"Unsafe launcher log node: {file_path}")
+    except BaseException:
+        os.close(file_descriptor)
+        raise
+    return file_descriptor
+
+
+def regular_file_size(file_path):
+    try:
+        file_descriptor = open_regular_file(file_path, os.O_RDONLY)
+    except FileNotFoundError:
+        return None
+    try:
+        return os.fstat(file_descriptor).st_size
+    finally:
+        os.close(file_descriptor)
+
+
+def bound_existing_file(file_path):
+    try:
+        file_descriptor = open_regular_file(file_path, os.O_WRONLY)
+    except FileNotFoundError:
+        return
+    try:
+        if os.fstat(file_descriptor).st_size > max_bytes:
+            os.ftruncate(file_descriptor, max_bytes)
+        os.fchmod(file_descriptor, 0o600)
+    finally:
+        os.close(file_descriptor)
+
+
+lock_fd = open_regular_file(lock_path, os.O_CREAT | os.O_RDWR)
+os.fchmod(lock_fd, 0o600)
+try:
+    # Adopt legacy unbounded logs before accepting new output. Truncation is a
+    # metadata operation: it enforces the limit without copying the old file.
+    fcntl.flock(lock_fd, fcntl.LOCK_EX)
+    try:
+        current_size = regular_file_size(log_path)
+        if current_size is not None and current_size > max_bytes:
+            os.replace(log_path, previous_path)
+        bound_existing_file(previous_path)
+    finally:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+
+    while True:
+        # os.read returns as soon as pipe data is available. BufferedReader.read
+        # may wait for the whole chunk and would hide short live diagnostics
+        # until Electron exits.
+        chunk = os.read(sys.stdin.fileno(), chunk_size)
+        if not chunk:
+            break
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        try:
+            current_size = regular_file_size(log_path) or 0
+            if current_size > 0 and current_size + len(chunk) > max_bytes:
+                try:
+                    os.replace(log_path, previous_path)
+                    bound_existing_file(previous_path)
+                except FileNotFoundError:
+                    pass
+            log_flags = os.O_CREAT | os.O_APPEND | os.O_WRONLY
+            log_fd = open_regular_file(log_path, log_flags)
+            try:
+                os.fchmod(log_fd, 0o600)
+                write_all(log_fd, chunk)
+            finally:
+                os.close(log_fd)
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+finally:
+    os.close(lock_fd)
+' "$LOG_FILE" "$max_bytes" < "$log_pipe" &
+    LAUNCHER_LOG_WRITER_PID=$!
+    exec > "$log_pipe" 2>&1
+    rm -f -- "$log_pipe"
+    LAUNCHER_LOG_PIPE=""
+}
+
+finish_bounded_launcher_logging() {
+    local writer_pid="${LAUNCHER_LOG_WRITER_PID:-}"
+    local timer_pid=""
+    local completed_pid=""
+    if [ -n "${LAUNCHER_LOG_PIPE:-}" ]; then
+        rm -f -- "$LAUNCHER_LOG_PIPE" 2>/dev/null || true
+        LAUNCHER_LOG_PIPE=""
+    fi
+    [ -n "$writer_pid" ] || return 0
+
+    LAUNCHER_LOG_WRITER_PID=""
+    exec 1>&- 2>&-
+
+    # Electron and non-blocking launch hooks inherit the write end. Drain a
+    # normal shutdown briefly, but never hold launcher exit waiting for a live
+    # descendant. The detached writer remains the pipe reader and exits on EOF.
+    sleep 1 &
+    timer_pid=$!
+    wait -n -p completed_pid "$writer_pid" "$timer_pid" 2>/dev/null || true
+    if [ "$completed_pid" = "$writer_pid" ]; then
+        kill "$timer_pid" 2>/dev/null || true
+        wait "$timer_pid" 2>/dev/null || true
+        wait "$writer_pid" 2>/dev/null || true
+    else
+        wait "$timer_pid" 2>/dev/null || true
+        disown "$writer_pid" 2>/dev/null || true
+    fi
+}
 
 configure_runtime_tmpdir() {
     [ -z "${TMPDIR:-}" ] || return 0
@@ -309,6 +524,8 @@ LAUNCHER_LOCK_TIMED_OUT=0
 LAUNCHER_LOCK_HELPER_PID=""
 LAUNCHER_LOCK_HELPER_START_TIME=""
 LAUNCHER_LOCK_STATUS_PATH=""
+LAUNCHER_LOG_WRITER_PID=""
+LAUNCHER_LOG_PIPE=""
 
 if [[ "${LAUNCHER_ARGS[0]:-}" == "--help" || "${LAUNCHER_ARGS[0]:-}" == "-h" ]]; then
     cat <<HELP
@@ -350,6 +567,8 @@ Environment:
                               Override --disable-dev-shm-usage; auto keeps it only when /dev/shm is missing or small
   CODEX_LAUNCHER_LOCK_WAIT_SECONDS=N
                               Seconds to wait for another launcher to leave the startup lock (default: 5)
+  CODEX_LINUX_LAUNCHER_LOG_MAX_BYTES=N
+                              Keep the live launcher.log at or below this size (default: 33554432)
   CODEX_FORCE_RENDERER_ACCESSIBILITY=auto|0|1
                               Override --force-renderer-accessibility; auto forces it only when assistive
                               technology is detected and never under WSLg or native wayland-gpu
@@ -385,7 +604,7 @@ if [[ "${LAUNCHER_ARGS[0]:-}" == "--diagnose-scaling" ]]; then
         exec 2>&"$LAUNCHER_EARLY_STDERR_FD"
     fi
 else
-    exec >>"$LOG_FILE" 2>&1
+    start_bounded_launcher_logging
 fi
 
 echo "[$(date -Is)] Starting $CODEX_LINUX_APP_DISPLAY_NAME launcher"
@@ -1658,7 +1877,7 @@ run_cold_start_hooks() {
             CODEX_LINUX_FEATURE_HOOK_PHASE="cold-start" \
             CODEX_UPDATE_MANAGER_PATH="${CODEX_UPDATE_MANAGER_PATH:-}" \
             codex_run_host_command "$hook" "$SCRIPT_DIR" "$APP_STATE_DIR" "$LOG_DIR"
-        ) >>"$LOG_FILE" 2>&1 &
+        ) &
     done
 }
 
@@ -4070,6 +4289,8 @@ cleanup_launcher() {
         kill "$STARTED_WEBVIEW_PID" 2>/dev/null || true
         rm -f "$WEBVIEW_PID_FILE"
     fi
+
+    finish_bounded_launcher_logging
 }
 
 launcher_lock_wait_seconds() {

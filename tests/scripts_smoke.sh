@@ -4356,6 +4356,250 @@ SCRIPT
         || fail "Expected explicit TMPDIR to remain unchanged, got: $(cat "$output")"
 }
 
+test_launcher_limits_codex_core_dumps() {
+    info "Checking launcher-scoped core dump filter"
+    local workspace="$TMP_DIR/launcher-coredump-filter"
+    local probe="$workspace/probe.sh"
+    local output="$workspace/output.log"
+    local started="$workspace/electron-started"
+    local missing_filter="$workspace/missing/coredump_filter"
+    local invalid_filter="$workspace/filter-directory"
+
+    mkdir -p "$workspace"
+    cat > "$probe" <<SCRIPT
+#!$BASH_BIN
+set -euo pipefail
+SCRIPT
+    awk '
+        /^configure_codex_coredump_filter\(\) \{/ { emit = 1 }
+        emit { print }
+        emit && /^}/ { exit }
+    ' "$REPO_DIR/launcher/start.sh.template" >> "$probe"
+    cat >> "$probe" <<'SCRIPT'
+configure_codex_coredump_filter "$1"
+touch "$2"
+cat "$1"
+SCRIPT
+    chmod +x "$probe"
+
+    bash "$probe" /proc/self/coredump_filter "$started" > "$output"
+    [ "$(cat "$output")" = "00000010" ] \
+        || fail "Expected Codex launcher core dump filter 00000010, got: $(cat "$output")"
+    assert_file_exists "$started"
+
+    rm -f "$started"
+    if bash "$probe" "$missing_filter" "$started" > "$output" 2>&1; then
+        fail "Launcher core dump filter must fail when procfs filter is unavailable"
+    fi
+    [ ! -e "$started" ] \
+        || fail "Electron launch marker must not be written after a missing core dump filter"
+
+    mkdir -p "$invalid_filter"
+    if bash "$probe" "$invalid_filter" "$started" > "$output" 2>&1; then
+        fail "Launcher core dump filter must fail when the filter cannot be written"
+    fi
+    [ ! -e "$started" ] \
+        || fail "Electron launch marker must not be written after an unwritable core dump filter"
+}
+
+test_launcher_bounds_live_log_stream() {
+    info "Checking bounded live launcher log stream"
+    local workspace="$TMP_DIR/launcher-log-stream"
+    local probe="$workspace/probe.sh"
+    local launcher_log="$workspace/launcher.log"
+    local original_inode=""
+    local max_bytes=262144
+
+    mkdir -p "$workspace"
+    cat > "$probe" <<SCRIPT
+#!$BASH_BIN
+set -euo pipefail
+SCRIPT
+    awk '
+        /^launcher_log_max_bytes\(\) \{/ { emit = 1 }
+        emit { print }
+        emit && /^}/ { exit }
+    ' "$REPO_DIR/launcher/start.sh.template" >> "$probe"
+    awk '
+        /^start_bounded_launcher_logging\(\) \{/ { emit = 1 }
+        emit { print }
+        emit && /^}/ { exit }
+    ' "$REPO_DIR/launcher/start.sh.template" >> "$probe"
+    awk '
+        /^finish_bounded_launcher_logging\(\) \{/ { emit = 1 }
+        emit { print }
+        emit && /^}/ { exit }
+    ' "$REPO_DIR/launcher/start.sh.template" >> "$probe"
+    cat >> "$probe" <<'SCRIPT'
+LOG_FILE="$1"
+CODEX_LINUX_LAUNCHER_LOG_MAX_BYTES="$2"
+LAUNCHER_LOG_WRITER_PID=""
+LAUNCHER_LOG_PIPE=""
+result_file="${5:-}"
+[ -z "$result_file" ] || exec 3> "$result_file"
+start_bounded_launcher_logging
+head -c "$3" /dev/zero | tr '\0' 'x'
+printf '%s\n' "post-rotation-record"
+if [ "${4:-0}" -gt 0 ]; then
+    (sleep "$4") &
+    holder_pid=$!
+    writer_pid="$LAUNCHER_LOG_WRITER_PID"
+    started_ns="$(date +%s%N)"
+    finish_bounded_launcher_logging
+    finished_ns="$(date +%s%N)"
+    if kill -0 "$writer_pid" 2>/dev/null; then
+        writer_survived_finish=1
+    else
+        writer_survived_finish=0
+    fi
+    printf 'elapsed_ms=%s\nwriter_survived_finish=%s\n' \
+        "$(( (finished_ns - started_ns) / 1000000 ))" \
+        "$writer_survived_finish" >&3
+    wait "$holder_pid"
+    writer_exited_after_eof=0
+    for _ in $(seq 1 100); do
+        if ! kill -0 "$writer_pid" 2>/dev/null; then
+            writer_exited_after_eof=1
+            break
+        fi
+        sleep 0.05
+    done
+    printf 'writer_exited_after_eof=%s\n' "$writer_exited_after_eof" >&3
+    exec 3>&-
+    exit 0
+fi
+finish_bounded_launcher_logging
+SCRIPT
+    chmod +x "$probe"
+
+    truncate -s 204800 "$launcher_log"
+    original_inode="$(stat -c '%i' "$launcher_log")"
+    bash "$probe" "$launcher_log" "$max_bytes" 102400
+
+    assert_file_exists "$launcher_log.previous"
+    [ "$(stat -c '%i' "$launcher_log.previous")" = "$original_inode" ] \
+        || fail "Oversized launcher log must be renamed, not copied"
+    [ "$(stat -c '%s' "$launcher_log.previous")" = "204800" ] \
+        || fail "Rotated launcher log size changed unexpectedly"
+    assert_contains "$launcher_log" "post-rotation-record"
+    assert_mode "$launcher_log" "600"
+    [ "$(stat -c '%s' "$launcher_log")" -le "$max_bytes" ] \
+        || fail "Current launcher log exceeded the configured limit"
+    [ "$(stat -c '%s' "$launcher_log.previous")" -le "$max_bytes" ] \
+        || fail "Previous launcher log exceeded the configured limit"
+
+    rm -f "$launcher_log" "$launcher_log.previous"
+    truncate -s "$((max_bytes * 2))" "$launcher_log"
+    original_inode="$(stat -c '%i' "$launcher_log")"
+    truncate -s "$((max_bytes * 3))" "$launcher_log.previous"
+    bash "$probe" "$launcher_log" "$max_bytes" 1
+
+    assert_file_exists "$launcher_log"
+    assert_file_exists "$launcher_log.previous"
+    [ "$(stat -c '%i' "$launcher_log.previous")" = "$original_inode" ] \
+        || fail "Legacy oversized launcher log must be renamed, not copied"
+    [ "$(stat -c '%s' "$launcher_log.previous")" -eq "$max_bytes" ] \
+        || fail "Legacy oversized launcher log was not bounded immediately"
+
+    truncate -s "$((max_bytes / 2))" "$launcher_log"
+    truncate -s "$((max_bytes * 2))" "$launcher_log.previous"
+    bash "$probe" "$launcher_log" "$max_bytes" 1
+    [ "$(stat -c '%s' "$launcher_log.previous")" -eq "$max_bytes" ] \
+        || fail "Existing previous launcher log was not bounded immediately"
+
+    local current_target="$workspace/current-target"
+    local previous_target="$workspace/previous-target"
+    local current_target_hash
+    local previous_target_hash
+    rm -f "$launcher_log" "$launcher_log.previous"
+    printf '%s\n' "current-target-must-not-change" > "$current_target"
+    printf '%s\n' "previous-target-must-not-change" > "$previous_target"
+    truncate -s "$((max_bytes * 2))" "$current_target"
+    truncate -s "$((max_bytes * 3))" "$previous_target"
+    chmod 0640 "$current_target"
+    chmod 0604 "$previous_target"
+    current_target_hash="$(sha256sum "$current_target")"
+    previous_target_hash="$(sha256sum "$previous_target")"
+    ln -s "$current_target" "$launcher_log"
+    ln -s "$previous_target" "$launcher_log.previous"
+    bash "$probe" "$launcher_log" "$max_bytes" 1
+
+    [ "$(sha256sum "$current_target")" = "$current_target_hash" ] \
+        || fail "Launcher log adoption modified the current symlink target"
+    [ "$(sha256sum "$previous_target")" = "$previous_target_hash" ] \
+        || fail "Launcher log adoption modified the previous symlink target"
+    assert_mode "$current_target" "640"
+    assert_mode "$previous_target" "604"
+    [ ! -L "$launcher_log" ] \
+        || fail "Launcher writer retained an unsafe current log symlink"
+    [ ! -L "$launcher_log.previous" ] \
+        || fail "Launcher writer retained an unsafe previous log symlink"
+
+    local hardlink_current_target="$workspace/hardlink-current-target"
+    local hardlink_previous_target="$workspace/hardlink-previous-target"
+    local hardlink_lock_target="$workspace/hardlink-lock-target"
+    local hardlink_current_hash
+    local hardlink_previous_hash
+    local hardlink_lock_hash
+    rm -f "$launcher_log" "$launcher_log.previous" "$launcher_log.lock"
+    printf '%s\n' "hardlink-current-target-must-not-change" > "$hardlink_current_target"
+    printf '%s\n' "hardlink-previous-target-must-not-change" > "$hardlink_previous_target"
+    printf '%s\n' "hardlink-lock-target-must-not-change" > "$hardlink_lock_target"
+    truncate -s "$((max_bytes * 2))" "$hardlink_current_target"
+    truncate -s "$((max_bytes * 3))" "$hardlink_previous_target"
+    chmod 0640 "$hardlink_current_target"
+    chmod 0604 "$hardlink_previous_target"
+    chmod 0644 "$hardlink_lock_target"
+    hardlink_current_hash="$(sha256sum "$hardlink_current_target")"
+    hardlink_previous_hash="$(sha256sum "$hardlink_previous_target")"
+    hardlink_lock_hash="$(sha256sum "$hardlink_lock_target")"
+    ln "$hardlink_current_target" "$launcher_log"
+    ln "$hardlink_previous_target" "$launcher_log.previous"
+    ln "$hardlink_lock_target" "$launcher_log.lock"
+    bash "$probe" "$launcher_log" "$max_bytes" 1
+
+    [ "$(sha256sum "$hardlink_current_target")" = "$hardlink_current_hash" ] \
+        || fail "Launcher log adoption modified the current hard-link target"
+    [ "$(sha256sum "$hardlink_previous_target")" = "$hardlink_previous_hash" ] \
+        || fail "Launcher log adoption modified the previous hard-link target"
+    [ "$(sha256sum "$hardlink_lock_target")" = "$hardlink_lock_hash" ] \
+        || fail "Launcher log adoption modified the lock hard-link target"
+    assert_mode "$hardlink_current_target" "640"
+    assert_mode "$hardlink_previous_target" "604"
+    assert_mode "$hardlink_lock_target" "644"
+    [ "$(stat -c '%h' "$launcher_log")" -eq 1 ] \
+        || fail "Launcher writer retained an unsafe current log hard link"
+    [ ! -e "$launcher_log.previous" ] || [ "$(stat -c '%h' "$launcher_log.previous")" -eq 1 ] \
+        || fail "Launcher writer retained an unsafe previous log hard link"
+    [ "$(stat -c '%h' "$launcher_log.lock")" -eq 1 ] \
+        || fail "Launcher writer retained an unsafe lock hard link"
+
+    rm -f "$launcher_log" "$launcher_log.previous"
+    bash "$probe" "$launcher_log" "$max_bytes" 204800 &
+    local first_writer=$!
+    bash "$probe" "$launcher_log" "$max_bytes" 204800 &
+    local second_writer=$!
+    wait "$first_writer"
+    wait "$second_writer"
+
+    assert_file_exists "$launcher_log"
+    assert_file_exists "$launcher_log.previous"
+    [ "$(stat -c '%s' "$launcher_log")" -le "$max_bytes" ] \
+        || fail "Concurrent current launcher log exceeded the configured limit"
+    [ "$(stat -c '%s' "$launcher_log.previous")" -le "$max_bytes" ] \
+        || fail "Concurrent previous launcher log exceeded the configured limit"
+
+    local shutdown_result="$workspace/shutdown-result"
+    rm -f "$launcher_log" "$launcher_log.previous" "$shutdown_result"
+    bash "$probe" "$launcher_log" "$max_bytes" 1 3 "$shutdown_result"
+    assert_contains "$shutdown_result" "writer_survived_finish=1"
+    assert_contains "$shutdown_result" "writer_exited_after_eof=1"
+    local shutdown_elapsed_ms
+    shutdown_elapsed_ms="$(sed -n 's/^elapsed_ms=//p' "$shutdown_result")"
+    [ "$shutdown_elapsed_ms" -lt 2500 ] \
+        || fail "Launcher log cleanup waited for a descendant-held FIFO (${shutdown_elapsed_ms}ms)"
+}
+
 test_managed_node_runtime_source_install() {
     info "Checking managed Node.js runtime source install"
     local workspace="$TMP_DIR/managed-node-runtime"
@@ -5011,6 +5255,9 @@ test_launcher_rejects_missing_webview_entrypoint() {
     local runtime_dir="$workspace/runtime"
     local electron_marker="$workspace/electron-called"
     local launcher_log="$home_dir/.cache/codex-renderer-url-test/launcher.log"
+    local notice_bin="$workspace/notice-bin"
+    local notice_log="$workspace/notify-send.log"
+    local isolated_host_tool_path="$notice_bin:$HOST_TOOL_PATH"
 
     mkdir -p \
         "$app_dir/.codex-linux/cold-start.d" \
@@ -5025,7 +5272,14 @@ test_launcher_rejects_missing_webview_entrypoint() {
         "$app_dir/resources/plugins/openai-bundled/.agents/plugins" \
         "$app_dir/resources/plugins/openai-bundled/plugins" \
         "$home_dir" \
-        "$runtime_dir"
+        "$runtime_dir" \
+        "$notice_bin"
+
+    cat > "$notice_bin/notify-send" <<'SCRIPT'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${NOTICE_LOG:?}"
+SCRIPT
+    chmod +x "$notice_bin/notify-send"
 
     {
         printf '%s\n' \
@@ -5050,9 +5304,10 @@ SCRIPT
 
     set +e
     timeout 20 env -i \
-        PATH="$HOST_TOOL_PATH" \
+        PATH="$isolated_host_tool_path" \
         HOME="$home_dir" \
         XDG_RUNTIME_DIR="$runtime_dir" \
+        NOTICE_LOG="$notice_log" \
         CODEX_CLI_PATH="$TRUE_BIN" \
         CODEX_WEBVIEW_PORT=45675 \
         ELECTRON_RENDERER_URL="http://127.0.0.1:9999/" \
@@ -5065,13 +5320,15 @@ SCRIPT
     [ "$rc" -ne 0 ] || fail "Launcher should fail when webview/index.html is missing"
     [ ! -e "$electron_marker" ] || fail "Launcher should not reach Electron when webview/index.html is missing"
     assert_contains "$launcher_log" "webview bundle is incomplete"
+    assert_contains "$notice_log" "webview bundle is incomplete"
 
     rm -f "$electron_marker"
     set +e
     timeout 20 env -i \
-        PATH="$HOST_TOOL_PATH" \
+        PATH="$isolated_host_tool_path" \
         HOME="$home_dir" \
         XDG_RUNTIME_DIR="$runtime_dir" \
+        NOTICE_LOG="$notice_log" \
         CODEX_CLI_PATH="$TRUE_BIN" \
         CODEX_WEBVIEW_PORT=45675 \
         CODEX_LINUX_ALLOW_RENDERER_URL_OVERRIDE=1 \
@@ -5089,7 +5346,7 @@ SCRIPT
     assert_contains "$launcher_log" "Skipping packaged webview setup because ELECTRON_RENDERER_URL override is enabled"
 
     run_packaged_launcher() {
-        local test_path="${1:-$HOST_TOOL_PATH}"
+        local test_path="${1:-$isolated_host_tool_path}"
         local -a renderer_override_env=()
         if [ -n "${2:-}" ]; then
             renderer_override_env+=(CODEX_LINUX_ALLOW_RENDERER_URL_OVERRIDE="$2")
@@ -5098,6 +5355,7 @@ SCRIPT
             PATH="$test_path" \
             HOME="$home_dir" \
             XDG_RUNTIME_DIR="$runtime_dir" \
+            NOTICE_LOG="$notice_log" \
             CODEX_CLI_PATH="$TRUE_BIN" \
             CODEX_WEBVIEW_PORT=45675 \
             "${renderer_override_env[@]}" \
@@ -5141,7 +5399,7 @@ SCRIPT
     chmod +x "$fake_bin/sha256sum"
     rm -f "$electron_marker"
     set +e
-    run_packaged_launcher "$fake_bin:$HOST_TOOL_PATH" > "$fingerprint_error" 2>&1
+    run_packaged_launcher "$fake_bin:$isolated_host_tool_path" > "$fingerprint_error" 2>&1
     rc=$?
     set -e
     [ "$rc" -ne 0 ] || fail "Launcher should fail when the webview fingerprint cannot be calculated"
@@ -5151,7 +5409,7 @@ SCRIPT
 
     rm -f "$electron_marker"
     set +e
-    run_packaged_launcher "$fake_bin:$HOST_TOOL_PATH" 1 > "$fingerprint_error" 2>&1
+    run_packaged_launcher "$fake_bin:$isolated_host_tool_path" 1 > "$fingerprint_error" 2>&1
     rc=$?
     set -e
     [ "$rc" -eq 0 ] || fail "Explicit renderer URL override should bypass packaged fingerprint failure"
@@ -5166,7 +5424,7 @@ SCRIPT
         > "$feature_renderer_env"
     rm -f "$electron_marker"
     set +e
-    run_packaged_launcher "$fake_bin:$HOST_TOOL_PATH" > "$fingerprint_error" 2>&1
+    run_packaged_launcher "$fake_bin:$isolated_host_tool_path" > "$fingerprint_error" 2>&1
     rc=$?
     set -e
     [ "$rc" -eq 0 ] || fail "Feature renderer URL override should bypass packaged fingerprint failure"
@@ -5734,8 +5992,10 @@ if 'env\\ *)' not in launcher_hooks_body or 'electron-arg\\ *)' not in launcher_
     raise SystemExit("launcher hooks must use the generic env/electron-arg stdout protocol")
 if 'COLD_START_HOOK_DIR' not in cold_start_hooks_body or '"$hook" "$SCRIPT_DIR" "$APP_STATE_DIR" "$LOG_DIR"' not in cold_start_hooks_body:
     raise SystemExit("launcher cold-start hook runner must be generic and pass standard paths")
-if '>>"$LOG_FILE" 2>&1 &' not in cold_start_hooks_body:
+if not re.search(r'\)\s*&', cold_start_hooks_body):
     raise SystemExit("launcher cold-start hooks must be non-blocking")
+if '>>"$LOG_FILE"' in cold_start_hooks_body:
+    raise SystemExit("launcher cold-start hooks must not bypass bounded launcher logging")
 if 'remote_mobile_control_main' in source:
     raise SystemExit("remote mobile daemon startup must live in the remote-mobile-control feature hook, not the main launcher")
 if "running_app_is_active" not in stop_body or "Preserving webview server" not in stop_body:
@@ -5833,8 +6093,13 @@ if 'read().strip() == "release"' in source or '"release\\n"' in source:
     raise SystemExit("launcher lock release must not add a status-file control protocol")
 if "launcher_lock_helper_is_active" not in source or "require_active_launcher_lock" not in launch_body:
     raise SystemExit("launcher must fail closed if the identity-bound lock helper exits before Electron")
-if "LAUNCHER_LOCK_CONTROL_PATH" in source or "mkfifo" in source:
+launcher_lock_body = source.split("acquire_launcher_lock() {", 1)[1].split("refresh_launch_state() {", 1)[0]
+if "LAUNCHER_LOCK_CONTROL_PATH" in source or "mkfifo" in launcher_lock_body:
     raise SystemExit("launcher lock release must not expose an inherited FIFO capability")
+if 'mkfifo -m 600 "$log_pipe"' not in source or 'launcher-log.$$.pipe' not in source:
+    raise SystemExit("bounded launcher logging must use a private, per-launch FIFO")
+if 'rm -f -- "$log_pipe"' not in source or 'LAUNCHER_LOG_WRITER_PID=$!' not in source:
+    raise SystemExit("bounded launcher logging must unlink its FIFO and track its writer explicitly")
 if "CODEX_ELECTRON_DISABLE_GPU_COMPOSITING=1" not in launch_body:
     raise SystemExit("launcher must log the GPU compositing workaround hint for side-panel flicker")
 if launch_body.count("release_launcher_lock") != 2:
@@ -10955,6 +11220,8 @@ main() {
     test_installer_keeps_electron_fallback_for_bad_metadata
     test_port_validation_rejects_oversized_numeric_values
     test_launcher_uses_private_default_tmpdir
+    test_launcher_limits_codex_core_dumps
+    test_launcher_bounds_live_log_stream
     test_managed_node_runtime_source_install
     test_managed_node_runtime_rejects_version_only_stub
     test_better_sqlite3_electron_42_source_patch
