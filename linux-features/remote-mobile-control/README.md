@@ -83,6 +83,11 @@ What it changes:
 - Preserves `remote_control = true` / `features.remote_control = true` in the
   local Codex config instead of letting upstream strip it before app-server
   startup.
+- Starts the Desktop-owned app-server with
+  `RUST_LOG=warn,codex_app_server_transport::transport::remote_control=info`
+  when `RUST_LOG` is otherwise unset. This records Remote transport lifecycle
+  events without enabling global INFO or DEBUG logging. An explicit user
+  `RUST_LOG` value remains authoritative.
 - Updates Remote settings and mobile setup copy so the experimental Linux flow
   is not described as Mac-only.
 - Stages `.codex-linux/cold-start.d/remote-mobile-control`, a feature-owned
@@ -111,7 +116,7 @@ feature descriptor to appear exactly once in this table.
 | --- | --- | --- |
 | `linux-remote-control-device-key` | `outbound-control` | Provides the client key used to enroll this Desktop against another remote-control host. |
 | `linux-remote-control-client-revocation-recovery` | `outbound-control` | Clears revoked client material before re-enrollment. |
-| `linux-remote-mobile-app-server-remote-control` | `mobile-host` | Starts this Desktop app-server with remote-control host support. |
+| `linux-remote-mobile-app-server-remote-control` | `mobile-host` | Starts this Desktop app-server with remote-control host support and focused Remote transport lifecycle logging. |
 | `linux-remote-control-load-gate` | `outbound-control` | Allows remote-control environments to load in Connections. |
 | `linux-remote-control-feature-sync` | `shared-boundary` | Enables `remote_control` only for the local host and excludes Remote SSH hosts. |
 | `linux-remote-control-visibility` | `outbound-control` | Exposes remote-control Connections UI when the server permits it. |
@@ -269,6 +274,15 @@ Keychain diagnostics:
   selected `basic_text`, or was running without Electron safe storage. The
   launcher log contains a warning with the detected backend but never logs key
   material, ciphertext, signatures, or tokens.
+
+Remote transport diagnostics:
+
+- Unless `RUST_LOG` is set explicitly, the Desktop-owned app-server keeps the
+  global level at `warn` and raises only
+  `codex_app_server_transport::transport::remote_control` to `info`.
+- This makes client connection, disconnection, retry, and relay lifecycle
+  events available for the next incident without expanding unrelated app-server
+  logging. To use a different filter, set `RUST_LOG` before launching Desktop.
 
 Run the feature tests with:
 

@@ -22,6 +22,9 @@ const {
   patchMainBundleSource,
 } = require("../../scripts/patches/runner.js");
 const {
+  applyExtractedAppPatchDescriptors,
+} = require("../../scripts/patches/engine.js");
+const {
   applyLinuxRemoteControlDeviceKeyPatch,
   applyLinuxRemoteControlClientRevokeSetupResetPatch,
   applyLinuxRemoteControlClientRevocationRecoveryPatch,
@@ -296,7 +299,20 @@ function syntheticSettingsRefreshBundle() {
 }
 
 function syntheticAppServerLaunchBundle() {
-  return "var Uz=`Codex Desktop`,Wz=[`-c`,`features.code_mode_host=true`,`app-server`,`--analytics-default-enabled`],Gz={appServerVersion:`current`};";
+  return [
+    "function codexLinuxHostProcessEnv(e){return e}",
+    "function Qz(){return codexLinuxHostProcessEnv({...process.env,LOG_FORMAT:`json`,RUST_LOG:process.env.RUST_LOG??`warn`,CODEX_INTERNAL_ORIGINATOR_OVERRIDE:`desktop`})}",
+    "var Uz=`Codex Desktop`,Wz=[`-c`,`features.code_mode_host=true`,`app-server`,`--analytics-default-enabled`],Gz={appServerVersion:`current`};",
+  ].join("");
+}
+
+function evaluateSyntheticAppServerLaunch(source, processEnv = {}) {
+  const context = {
+    module: { exports: {} },
+    process: { env: processEnv, platform: "linux" },
+  };
+  vm.runInNewContext(`${source};module.exports={args:Wz,env:Qz()};`, context);
+  return context.module.exports;
 }
 
 function syntheticCurrentSettingsBundle() {
@@ -1248,7 +1264,80 @@ test("Linux remote mobile app-server launch enables remote control on the Deskto
     /Wz=\[`-c`,`features\.code_mode_host=true`,`app-server`,`--analytics-default-enabled`\]/,
   );
   assert.match(patched, /Wz=codexLinuxRemoteMobileAppServerArgs\(\)/);
+  assert.equal(
+    evaluateSyntheticAppServerLaunch(patched).env.RUST_LOG,
+    "warn,codex_app_server_transport::transport::remote_control=info",
+  );
   assert.equal(applyLinuxRemoteMobileAppServerRemoteControlPatch(patched), patched);
+});
+
+test("Linux remote mobile app-server logging preserves an explicit RUST_LOG filter", () => {
+  const patched = applyLinuxRemoteMobileAppServerRemoteControlPatch(
+    syntheticAppServerLaunchBundle(),
+  );
+
+  assert.equal(
+    evaluateSyntheticAppServerLaunch(patched, { RUST_LOG: "warn,custom_crate=debug" }).env.RUST_LOG,
+    "warn,custom_crate=debug",
+  );
+  assert.equal(
+    evaluateSyntheticAppServerLaunch(patched, { RUST_LOG: "" }).env.RUST_LOG,
+    "",
+  );
+  assert.equal(
+    evaluateSyntheticAppServerLaunch(patched, { RUST_LOG: "   " }).env.RUST_LOG,
+    "   ",
+  );
+});
+
+test("Linux remote mobile app-server patch rejects partial launch and logging contracts", () => {
+  const withoutLogging = syntheticAppServerLaunchBundle().replace(
+    "codexLinuxHostProcessEnv({...process.env,LOG_FORMAT:`json`,RUST_LOG:process.env.RUST_LOG??`warn`,CODEX_INTERNAL_ORIGINATOR_OVERRIDE:`desktop`})",
+    "codexLinuxHostProcessEnv({...process.env,LOG_FORMAT:`json`})",
+  );
+  const withoutArgs = syntheticAppServerLaunchBundle().replace(
+    "[`-c`,`features.code_mode_host=true`,`app-server`,`--analytics-default-enabled`]",
+    "[`app-server`]",
+  );
+
+  for (const source of [withoutLogging, withoutArgs]) {
+    const { result, warnings } = captureWarnings(
+      () => applyLinuxRemoteMobileAppServerRemoteControlPatch(source),
+    );
+    assert.equal(result, source);
+    assert.ok(warnings.some((warning) => warning.includes("Incomplete app-server Remote")));
+  }
+});
+
+test("Linux remote mobile app-server descriptor reports partial contract drift", () => {
+  const extractedDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-remote-mobile-partial-"));
+  try {
+    const buildDir = path.join(extractedDir, ".vite", "build");
+    fs.mkdirSync(buildDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(buildDir, "src-partial.js"),
+      syntheticAppServerLaunchBundle().replace(
+        "codexLinuxHostProcessEnv({...process.env,LOG_FORMAT:`json`,RUST_LOG:process.env.RUST_LOG??`warn`,CODEX_INTERNAL_ORIGINATOR_OVERRIDE:`desktop`})",
+        "codexLinuxHostProcessEnv({...process.env,LOG_FORMAT:`json`})",
+      ),
+    );
+    const descriptor = remoteMobilePatchDescriptors.find(
+      ({ id }) => id === "linux-remote-mobile-app-server-remote-control",
+    );
+    const report = createPatchReport();
+    applyExtractedAppPatchDescriptors(
+      extractedDir,
+      [descriptor],
+      {},
+      report,
+      "extracted-app:post-webview",
+    );
+
+    assert.equal(report.patches[0]?.status, "skipped-optional");
+    assert.match(report.patches[0]?.reason ?? "", /Incomplete app-server Remote/u);
+  } finally {
+    fs.rmSync(extractedDir, { recursive: true, force: true });
+  }
 });
 
 test("Linux remote mobile app-server launch keeps a leading use strict directive first", () => {

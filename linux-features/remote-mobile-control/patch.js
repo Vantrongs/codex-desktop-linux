@@ -50,8 +50,11 @@ const REMOTE_CONTROL_REVOKE_SETUP_RESET_MARKER = "codexLinuxRemoteControlResetMo
 const REMOTE_CONTROL_VISIBILITY_MARKER = "codexLinuxRemoteControlVisibilityEnabled";
 const REMOTE_CONTROL_COPY_MARKER = "codexLinuxRemoteControlCopy";
 const REMOTE_MOBILE_APP_SERVER_REMOTE_CONTROL_MARKER = "codexLinuxRemoteMobileAppServerArgs";
+const REMOTE_MOBILE_APP_SERVER_RUST_LOG_MARKER = "codexLinuxRemoteMobileRustLog";
 const REMOTE_MOBILE_APP_SERVER_ARGS_NEEDLE =
   "[`-c`,`features.code_mode_host=true`,`app-server`,`--analytics-default-enabled`]";
+const REMOTE_MOBILE_APP_SERVER_RUST_LOG_NEEDLE =
+  "codexLinuxHostProcessEnv({...process.env,LOG_FORMAT:`json`,RUST_LOG:process.env.RUST_LOG??`warn`";
 const REMOTE_CONTROL_APP_INITIAL_ASSET_PATTERN = /^app-initial-[^.]+\.js$/u;
 const REMOTE_CONTROL_LINUX_COPY_REPLACEMENTS = [
   ["defaultMessage:`Mac`", "defaultMessage:`Linux`"],
@@ -213,26 +216,59 @@ function applyLinuxRemoteControlClientRevocationRecoveryPatch(source) {
 }
 
 function applyLinuxRemoteMobileAppServerRemoteControlPatch(source) {
-  if (source.includes(REMOTE_MOBILE_APP_SERVER_REMOTE_CONTROL_MARKER)) {
-    return source;
-  }
-  if (!source.includes(REMOTE_MOBILE_APP_SERVER_ARGS_NEEDLE)) {
+  const hasArgsContract = source.includes(REMOTE_MOBILE_APP_SERVER_REMOTE_CONTROL_MARKER) ||
+    source.includes(REMOTE_MOBILE_APP_SERVER_ARGS_NEEDLE);
+  const hasRustLogContract = source.includes(REMOTE_MOBILE_APP_SERVER_RUST_LOG_MARKER) ||
+    source.includes(REMOTE_MOBILE_APP_SERVER_RUST_LOG_NEEDLE);
+  if (!hasArgsContract || !hasRustLogContract) {
+    if (hasArgsContract || hasRustLogContract) {
+      console.warn(
+        "WARN: Incomplete app-server Remote launch/logging contract - skipping Linux remote mobile app-server patch",
+      );
+    }
     return source;
   }
 
-  const helper =
-    "function codexLinuxRemoteMobileAppServerArgs(){return process.platform===`linux`?[`-c`,`features.code_mode_host=true`,`app-server`,`--remote-control`,`--analytics-default-enabled`]:[`-c`,`features.code_mode_host=true`,`app-server`,`--analytics-default-enabled`]}";
-  const replaced = source
-    .split(REMOTE_MOBILE_APP_SERVER_ARGS_NEEDLE)
-    .join("codexLinuxRemoteMobileAppServerArgs()");
+  let patched = source;
+  let helpers = "";
+  if (!patched.includes(REMOTE_MOBILE_APP_SERVER_REMOTE_CONTROL_MARKER)) {
+    if (patched.includes(REMOTE_MOBILE_APP_SERVER_ARGS_NEEDLE)) {
+      helpers +=
+        "function codexLinuxRemoteMobileAppServerArgs(){return process.platform===`linux`?[`-c`,`features.code_mode_host=true`,`app-server`,`--remote-control`,`--analytics-default-enabled`]:[`-c`,`features.code_mode_host=true`,`app-server`,`--analytics-default-enabled`]}";
+      patched = patched
+        .split(REMOTE_MOBILE_APP_SERVER_ARGS_NEEDLE)
+        .join("codexLinuxRemoteMobileAppServerArgs()");
+    }
+  }
+  if (!patched.includes(REMOTE_MOBILE_APP_SERVER_RUST_LOG_MARKER)) {
+    if (patched.includes(REMOTE_MOBILE_APP_SERVER_RUST_LOG_NEEDLE)) {
+      helpers +=
+        "function codexLinuxRemoteMobileRustLog(){return process.env.RUST_LOG??`warn,codex_app_server_transport::transport::remote_control=info`}";
+      patched = patched.replace(
+        REMOTE_MOBILE_APP_SERVER_RUST_LOG_NEEDLE,
+        "codexLinuxHostProcessEnv({...process.env,LOG_FORMAT:`json`,RUST_LOG:codexLinuxRemoteMobileRustLog()",
+      );
+    }
+  }
+  if (patched === source) return source;
+  if (
+    !patched.includes(REMOTE_MOBILE_APP_SERVER_REMOTE_CONTROL_MARKER) ||
+    !patched.includes(REMOTE_MOBILE_APP_SERVER_RUST_LOG_MARKER)
+  ) {
+    console.warn(
+      "WARN: App-server Remote launch/logging markers were not both installed - leaving bundle unchanged",
+    );
+    return source;
+  }
+
   // Insert after a leading "use strict" so prepending the helper does not
   // demote the directive to a plain expression and de-strict the bundle.
-  const insertAt = replaced.startsWith('"use strict";')
+  const insertAt = patched.startsWith('"use strict";')
     ? '"use strict";'.length
-    : replaced.startsWith("'use strict';")
+    : patched.startsWith("'use strict';")
       ? "'use strict';".length
       : 0;
-  return `${replaced.slice(0, insertAt)}${helper}${replaced.slice(insertAt)}`;
+  return `${patched.slice(0, insertAt)}${helpers}${patched.slice(insertAt)}`;
 }
 
 function applyLinuxRemoteMobileAppServerRemoteControlExtractedAppPatch(extractedDir) {
@@ -255,7 +291,9 @@ function applyLinuxRemoteMobileAppServerRemoteControlExtractedAppPatch(extracted
     const source = fs.readFileSync(filePath, "utf8");
     if (
       !source.includes(REMOTE_MOBILE_APP_SERVER_ARGS_NEEDLE) &&
-      !source.includes(REMOTE_MOBILE_APP_SERVER_REMOTE_CONTROL_MARKER)
+      !source.includes(REMOTE_MOBILE_APP_SERVER_REMOTE_CONTROL_MARKER) &&
+      !source.includes(REMOTE_MOBILE_APP_SERVER_RUST_LOG_NEEDLE) &&
+      !source.includes(REMOTE_MOBILE_APP_SERVER_RUST_LOG_MARKER)
     ) {
       continue;
     }
