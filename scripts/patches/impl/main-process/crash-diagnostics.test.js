@@ -54,7 +54,7 @@ test("renderer crash diagnostics rejects partial installed markers", () => {
   );
 });
 
-test("renderer crash diagnostics write one private JSONL record", () => {
+test("renderer crash diagnostics writes only to a private regular JSONL file", () => {
   const stateRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-renderer-crash-state-"));
   const previousStateHome = process.env.XDG_STATE_HOME;
   const previousAppId = process.env.CODEX_LINUX_APP_ID;
@@ -99,6 +99,38 @@ test("renderer crash diagnostics write one private JSONL record", () => {
     assert.equal(warnings.length, 1);
     assert.equal(warnings[0].message, "Linux renderer process gone");
     assert.equal(warnings[0].details.safe.rendererPid, 4242);
+
+    const symlinkTarget = path.join(stateRoot, "symlink-target");
+    fs.rmSync(logFile);
+    fs.writeFileSync(symlinkTarget, "symlink-target-must-not-change\n", { mode: 0o640 });
+    const symlinkTargetContents = fs.readFileSync(symlinkTarget);
+    fs.symlinkSync(symlinkTarget, logFile);
+    listeners.get("render-process-gone")(
+      {},
+      { id: 8, getOSProcessId: () => 4343 },
+      { exitCode: 6, reason: "crashed" },
+    );
+    assert.deepEqual(fs.readFileSync(symlinkTarget), symlinkTargetContents);
+    assert.equal(fs.statSync(symlinkTarget).mode & 0o777, 0o640);
+    assert.equal(fs.lstatSync(logFile).isSymbolicLink(), false);
+    assert.equal(fs.statSync(logFile).mode & 0o777, 0o600);
+    assert.equal(fs.statSync(logFile).nlink, 1);
+
+    const hardlinkTarget = path.join(stateRoot, "hardlink-target");
+    fs.rmSync(logFile);
+    fs.writeFileSync(hardlinkTarget, "hardlink-target-must-not-change\n", { mode: 0o604 });
+    const hardlinkTargetContents = fs.readFileSync(hardlinkTarget);
+    fs.linkSync(hardlinkTarget, logFile);
+    listeners.get("render-process-gone")(
+      {},
+      { id: 9, getOSProcessId: () => 4444 },
+      { exitCode: 7, reason: "crashed" },
+    );
+    assert.deepEqual(fs.readFileSync(hardlinkTarget), hardlinkTargetContents);
+    assert.equal(fs.statSync(hardlinkTarget).mode & 0o777, 0o604);
+    assert.equal(fs.statSync(logFile).mode & 0o777, 0o600);
+    assert.equal(fs.statSync(logFile).nlink, 1);
+    assert.equal(warnings.length, 3);
   } finally {
     if (previousStateHome == null) delete process.env.XDG_STATE_HOME;
     else process.env.XDG_STATE_HOME = previousStateHome;
