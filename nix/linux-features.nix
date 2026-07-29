@@ -17,6 +17,7 @@ let
     "remote-mobile-control"
     "shallow-repository-watches"
     "skill-invocation-policy"
+    "ssh-command-wrapper"
     "ui-tweaks"
   ];
 
