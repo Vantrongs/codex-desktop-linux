@@ -71,6 +71,12 @@ impl Fixture {
         fs::create_dir_all(state_home.join("codex-update-manager"))?;
         fs::create_dir_all(cache_home.join("codex-update-manager"))?;
         fs::create_dir_all(app_executable.parent().context("app executable parent")?)?;
+        link_test_system_tools(
+            cli_path.parent().context("CLI path parent")?,
+            &[
+                "cat", "chmod", "kill", "mkdir", "rm", "rmdir", "sh", "sleep", "touch",
+            ],
+        )?;
 
         write_executable(&cli_entrypoint, &cli_script("0.42.0"))?;
         symlink(
@@ -83,53 +89,53 @@ impl Fixture {
             r#"#!/bin/sh
 		if [ "$1" = "view" ]; then
 			  if [ "${NPM_VIEW_MODE:-success}" = "delayed-failure" ]; then
-		    /bin/touch "$NPM_VIEW_STARTED"
+		    touch "$NPM_VIEW_STARTED"
 	    while [ ! -e "$NPM_VIEW_RELEASE" ]; do
-	      /bin/sleep 0.01
+	      sleep 0.01
 	    done
 	    printf 'registry unavailable\n' >&2
 	    exit 43
 	  fi
-	  /bin/cat "$NPM_LATEST_VERSION"
+	  cat "$NPM_LATEST_VERSION"
   exit 0
 fi
 if [ "$1" = "install" ]; then
   printf '%s\n' "$$" >> "$NPM_INSTALL_LOG"
   printf '%s\n' "$PPID" > "$NPM_SUPERVISOR_PID"
-  previous_group="$(/bin/cat "$NPM_BACKGROUND_PROCESS_GROUP" 2>/dev/null || true)"
-  if [ -n "$previous_group" ] && /bin/kill -0 -- "-$previous_group" 2>/dev/null; then
-    /bin/touch "$NPM_INSTALL_OVERLAP"
+  previous_group="$(cat "$NPM_BACKGROUND_PROCESS_GROUP" 2>/dev/null || true)"
+  if [ -n "$previous_group" ] && kill -0 -- "-$previous_group" 2>/dev/null; then
+    touch "$NPM_INSTALL_OVERLAP"
     exit 99
   fi
-  if ! /bin/mkdir "$NPM_INSTALL_OWNER" 2>/dev/null; then
-    owner_pid="$(/bin/cat "$NPM_INSTALL_OWNER/pid" 2>/dev/null || true)"
-    if [ -n "$owner_pid" ] && /bin/kill -0 "$owner_pid" 2>/dev/null; then
-      /bin/touch "$NPM_INSTALL_OVERLAP"
+  if ! mkdir "$NPM_INSTALL_OWNER" 2>/dev/null; then
+    owner_pid="$(cat "$NPM_INSTALL_OWNER/pid" 2>/dev/null || true)"
+    if [ -n "$owner_pid" ] && kill -0 "$owner_pid" 2>/dev/null; then
+      touch "$NPM_INSTALL_OVERLAP"
       exit 99
     fi
-    /bin/rm -f "$NPM_INSTALL_OWNER/pid"
-    /bin/rmdir "$NPM_INSTALL_OWNER"
-    /bin/mkdir "$NPM_INSTALL_OWNER"
+    rm -f "$NPM_INSTALL_OWNER/pid"
+    rmdir "$NPM_INSTALL_OWNER"
+    mkdir "$NPM_INSTALL_OWNER"
   fi
   if [ -d "$NPM_INSTALL_OWNER" ]; then
     printf '%s\n' "$$" > "$NPM_INSTALL_OWNER/pid"
-    trap '/bin/rm -f "$NPM_INSTALL_OWNER/pid"; /bin/rmdir "$NPM_INSTALL_OWNER"' EXIT
-    /bin/touch "$NPM_INSTALL_STARTED"
-    if [ "$(/bin/cat "$NPM_INSTALL_MODE")" = "background-descendant" ] ||
-       [ "$(/bin/cat "$NPM_INSTALL_MODE")" = "background-descendant-hang" ]; then
-      /bin/sh -c 'trap "exit 0" TERM; while :; do /bin/sleep 1; done' \
+    trap 'rm -f "$NPM_INSTALL_OWNER/pid"; rmdir "$NPM_INSTALL_OWNER"' EXIT
+    touch "$NPM_INSTALL_STARTED"
+    if [ "$(cat "$NPM_INSTALL_MODE")" = "background-descendant" ] ||
+       [ "$(cat "$NPM_INSTALL_MODE")" = "background-descendant-hang" ]; then
+      sh -c 'trap "exit 0" TERM; while :; do sleep 1; done' \
         >/dev/null 2>&1 &
       printf '%s\n' "$PPID" > "$NPM_BACKGROUND_PROCESS_GROUP"
-      if [ "$(/bin/cat "$NPM_INSTALL_MODE")" = "background-descendant" ]; then
+      if [ "$(cat "$NPM_INSTALL_MODE")" = "background-descendant" ]; then
         exit 0
       fi
     fi
     while [ ! -e "$NPM_INSTALL_RELEASE" ]; do
-      /bin/sleep 0.01
+      sleep 0.01
     done
   fi
-	  if [ "$(/bin/cat "$NPM_INSTALL_MODE")" = "stale" ]; then
-    /bin/mkdir -p "$NPM_RETIREMENT_PATH"
+	  if [ "$(cat "$NPM_INSTALL_MODE")" = "stale" ]; then
+    mkdir -p "$NPM_RETIREMENT_PATH"
     printf '%s\n' \
       'npm error code ENOTEMPTY' \
       'npm error syscall rename' \
@@ -138,7 +144,7 @@ if [ "$1" = "install" ]; then
 	    exit 217
 	  fi
 	  printf '%s\n' '#!/bin/sh' "echo 'codex-cli v0.42.1'" > "$NPM_MANAGED_CLI"
-	  /bin/chmod 755 "$NPM_MANAGED_CLI"
+	  chmod 755 "$NPM_MANAGED_CLI"
 	  exit 0
 fi
 exit 1
@@ -615,7 +621,7 @@ fn killed_npm_supervisor_cleans_descendants_before_lock_release() -> Result<()> 
             .trim()
             .parse::<i32>()?;
     anyhow::ensure!(
-        Command::new("/bin/kill")
+        Command::new(find_test_system_tool("kill")?)
             .args(["-0", "--", &format!("-{background_process_group}")])
             .status()?
             .success(),
@@ -664,6 +670,25 @@ fn write_executable(path: &Path, contents: &str) -> Result<()> {
     let mut permissions = fs::metadata(path)?.permissions();
     permissions.set_mode(0o755);
     fs::set_permissions(path, permissions)?;
+    Ok(())
+}
+
+fn find_test_system_tool(name: &str) -> Result<PathBuf> {
+    std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+        .filter(|directory| directory.is_absolute())
+        .map(|directory| directory.join(name))
+        .find(|candidate| {
+            fs::metadata(candidate).is_ok_and(|metadata| {
+                metadata.is_file() && metadata.permissions().mode() & 0o111 != 0
+            })
+        })
+        .with_context(|| format!("system tool {name} not found"))
+}
+
+fn link_test_system_tools(bin_dir: &Path, names: &[&str]) -> Result<()> {
+    for name in names {
+        symlink(find_test_system_tool(name)?, bin_dir.join(name))?;
+    }
     Ok(())
 }
 

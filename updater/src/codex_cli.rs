@@ -5964,6 +5964,7 @@ wait
 
         let bin_dir = temp.path().join("bin");
         fs::create_dir_all(&bin_dir)?;
+        link_test_system_tool(&bin_dir, "chmod")?;
 
         let codex_path = bin_dir.join("codex");
         let managed_codex_path = temp.path().join(".codex-cli-npm/bin/codex");
@@ -5980,7 +5981,7 @@ wait
         let npm_path = bin_dir.join("npm");
         write_executable_script(
             &npm_path,
-            "#!/bin/sh\nif [ \"$1\" = \"view\" ] && [ \"$2\" = \"@openai/codex\" ] && [ \"$3\" = \"version\" ]; then\n  echo '0.42.1'\n  exit 0\nfi\nif [ \"$1\" = \"install\" ] && [ \"$2\" = \"-g\" ] && [ \"$3\" = \"--include=optional\" ]; then\n  printf '%s\\n' '#!/bin/sh' 'if [ \"$1\" = \"--version\" ] || [ \"$1\" = \"version\" ]; then' \"  echo 'codex-cli v0.42.1'\" '  exit 0' 'fi' 'exit 1' > \"$FAKE_CODEX_PATH\"\n  /bin/chmod 0755 \"$FAKE_CODEX_PATH\"\n  exit 0\nfi\nexit 1\n",
+            "#!/bin/sh\nif [ \"$1\" = \"view\" ] && [ \"$2\" = \"@openai/codex\" ] && [ \"$3\" = \"version\" ]; then\n  echo '0.42.1'\n  exit 0\nfi\nif [ \"$1\" = \"install\" ] && [ \"$2\" = \"-g\" ] && [ \"$3\" = \"--include=optional\" ]; then\n  printf '%s\\n' '#!/bin/sh' 'if [ \"$1\" = \"--version\" ] || [ \"$1\" = \"version\" ]; then' \"  echo 'codex-cli v0.42.1'\" '  exit 0' 'fi' 'exit 1' > \"$FAKE_CODEX_PATH\"\n  chmod 0755 \"$FAKE_CODEX_PATH\"\n  exit 0\nfi\nexit 1\n",
         )?;
 
         std::env::set_var("HOME", temp.path());
@@ -6170,6 +6171,8 @@ exit 1
         secure_test_directory_tree(&prefix)?;
         fs::set_permissions(&home, fs::Permissions::from_mode(0o755))?;
         fs::create_dir_all(&bin_dir)?;
+        link_test_system_tool(&bin_dir, "chmod")?;
+        link_test_system_tool(&bin_dir, "mkdir")?;
         write_executable_script(
             &bin_dir.join("npm"),
             r#"#!/bin/sh
@@ -6184,12 +6187,12 @@ fi
 if [ "$1" = "install" ]; then
   printf 'attempt\n' >> "$NPM_INSTALL_LOG"
   if [ "${NPM_INSTALL_RESULT:-failure}" = "invalid" ]; then
-    /bin/mkdir -p "$NPM_MANAGED_CLI_DIR"
+    mkdir -p "$NPM_MANAGED_CLI_DIR"
     printf '%s\n' '#!/bin/sh' 'exit 1' > "$NPM_MANAGED_CLI"
-    /bin/chmod 755 "$NPM_MANAGED_CLI"
+    chmod 755 "$NPM_MANAGED_CLI"
     exit 0
   fi
-  /bin/mkdir -p "$NPM_RETIREMENT_PATH"
+  mkdir -p "$NPM_RETIREMENT_PATH"
   printf 'retry failed\n' >&2
   exit 42
 fi
@@ -6291,6 +6294,7 @@ exit 1
         fs::create_dir_all(&home)?;
         fs::create_dir_all(&npm_bin)?;
         fs::create_dir_all(&system_bin)?;
+        link_test_system_tool(&npm_bin, "chmod")?;
 
         let system_codex = system_bin.join("codex");
         write_executable_script(
@@ -6320,7 +6324,7 @@ if [ "$1" = "view" ] && [ "$2" = "@openai/codex" ] && [ "$3" = "version" ]; then
 fi
 if [ "$1" = "install" ] && [ "$2" = "-g" ] && [ "$3" = "--include=optional" ]; then
   printf '%s\n' '#!/bin/sh' 'echo "codex-cli v0.42.1"' > "$FAKE_CODEX_PATH"
-  /bin/chmod 0755 "$FAKE_CODEX_PATH"
+  chmod 0755 "$FAKE_CODEX_PATH"
   exit 0
 fi
 exit 1

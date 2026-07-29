@@ -232,6 +232,7 @@ The Home Manager and NixOS modules accept these feature IDs through
 | `remote-mobile-control` | Experimental Linux Remote host and outbound-control adaptation |
 | `shallow-repository-watches` | Limit repository previews to bounded, shallow directory watches; conflicts with `directory-only-working-tree-watch` |
 | `skill-invocation-policy` | Separate automatic/manual-only policy control and `$`/`!` Skill menus; requires a compatible CLI |
+| `ssh-command-wrapper` | Per-connection argv wrapper for SSH probes, setup commands, and app-server proxies |
 | `ui-tweaks` | Optional shared UI customizations with declarative feature settings |
 
 The list is validated during module evaluation, then deduplicated and sorted so

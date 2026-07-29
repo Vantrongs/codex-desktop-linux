@@ -12,6 +12,28 @@ fn write_executable(path: &Path, contents: &str) -> Result<()> {
     Ok(())
 }
 
+fn link_test_system_tools(bin_dir: &Path, names: &[&str]) -> Result<()> {
+    let host_path = std::env::var_os("PATH").unwrap_or_default();
+    for name in names {
+        let target = std::env::split_paths(&host_path)
+            .filter(|directory| directory.is_absolute())
+            .map(|directory| directory.join(name))
+            .find(|candidate| {
+                std::fs::metadata(candidate).is_ok_and(|metadata| {
+                    metadata.is_file() && metadata.permissions().mode() & 0o111 != 0
+                })
+            })
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("system tool {name} not found"),
+                )
+            })?;
+        std::os::unix::fs::symlink(target, bin_dir.join(name))?;
+    }
+    Ok(())
+}
+
 fn secure_tree(path: &Path) -> Result<()> {
     let metadata = std::fs::symlink_metadata(path)?;
     if !metadata.is_dir() || metadata.file_type().is_symlink() {
@@ -73,6 +95,7 @@ fn prepare_fixture(root: &Path) -> Result<CliRepairProcessFixture> {
     std::fs::create_dir_all(&stale_directory)?;
     std::fs::create_dir_all(&bin_dir)?;
     std::fs::create_dir_all(&managed_bin)?;
+    link_test_system_tools(&bin_dir, &["chmod", "mkdir", "sleep", "touch"])?;
 
     let mut config = test_config(root);
     config.workspace_root = paths.cache_dir.clone();
@@ -98,17 +121,17 @@ fn prepare_fixture(root: &Path) -> Result<CliRepairProcessFixture> {
 fi
 if [ "$1" = "install" ]; then
   printf '%s\n' "$$" >> "$NPM_INSTALL_LOG"
-  if /bin/mkdir "$NPM_OWNER_DIR" 2>/dev/null; then
-    /bin/touch "$NPM_INSTALL_STARTED"
+  if mkdir "$NPM_OWNER_DIR" 2>/dev/null; then
+    touch "$NPM_INSTALL_STARTED"
     while [ ! -e "$NPM_INSTALL_RELEASE" ]; do
-      /bin/sleep 0.01
+      sleep 0.01
     done
   else
-    /bin/touch "$NPM_INSTALL_OVERLAP"
+    touch "$NPM_INSTALL_OVERLAP"
   fi
   if [ "${NPM_INSTALL_RESULT:-stale}" = "success" ]; then
     printf '%s\n' '#!/bin/sh' 'echo "codex-cli v0.42.1"' > "$NPM_MANAGED_CLI"
-    /bin/chmod 755 "$NPM_MANAGED_CLI"
+    chmod 755 "$NPM_MANAGED_CLI"
     exit 0
   fi
   printf '%s\n' \
