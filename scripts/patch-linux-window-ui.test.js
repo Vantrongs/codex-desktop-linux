@@ -1024,6 +1024,7 @@ test("default core patch descriptors are grouped and unique", () => {
     "linux-renderer-crash-diagnostics",
     "linux-renderer-crash-breadcrumbs",
     "linux-agent-activity-layout-stability",
+    "linux-thread-virtualizer-layout-stability",
     "linux-local-app-server-feature-enablement-handler",
     "linux-remote-control-config-preservation",
     "linux-app-updater-menu",
