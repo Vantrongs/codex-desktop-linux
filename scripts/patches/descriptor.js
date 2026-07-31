@@ -24,9 +24,31 @@ const CI_POLICIES = new Set([
   CI_POLICY_OPTIONAL,
   CI_POLICY_OPT_IN,
 ]);
+const CORE_PATCH_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 
 function descriptorId(descriptor) {
   return descriptor.id ?? descriptor.name;
+}
+
+function normalizeComposesPatches(value, id) {
+  if (value == null) {
+    return undefined;
+  }
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(`Patch descriptor '${id}' composesPatches must be a non-empty array`);
+  }
+  const ownerPatchIds = value.map((ownerPatchId) => {
+    if (typeof ownerPatchId !== "string" || !CORE_PATCH_ID_PATTERN.test(ownerPatchId)) {
+      throw new Error(
+        `Patch descriptor '${id}' composesPatches entries must match ${CORE_PATCH_ID_PATTERN}`,
+      );
+    }
+    return ownerPatchId;
+  });
+  if (new Set(ownerPatchIds).size !== ownerPatchIds.length) {
+    throw new Error(`Patch descriptor '${id}' composesPatches must not contain duplicates`);
+  }
+  return ownerPatchIds;
 }
 
 function assertDescriptorBase(descriptor, phase) {
@@ -62,6 +84,7 @@ function assertDescriptorBase(descriptor, phase) {
       );
     }
   }
+  normalizeComposesPatches(descriptor.composesPatches, id);
   return id;
 }
 
@@ -76,6 +99,9 @@ function patchDescriptor(phase, descriptor) {
     name: descriptor.name ?? id,
     phase,
     ciPolicy: descriptor.ciPolicy ?? CI_POLICY_OPTIONAL,
+    ...(descriptor.composesPatches == null
+      ? {}
+      : { composesPatches: normalizeComposesPatches(descriptor.composesPatches, id) }),
   };
 }
 
@@ -119,6 +145,7 @@ module.exports = {
   PHASE_WEBVIEW_ASSET,
   extractedAppPatch,
   mainBundlePatch,
+  normalizeComposesPatches,
   patchDescriptor,
   webviewAssetPatch,
 };
