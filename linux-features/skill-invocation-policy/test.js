@@ -277,6 +277,25 @@ test("composer patch supports the current split trigger and Skill menu chunks", 
   assert.equal(applySkillInvocationComposerPatch(trigger), trigger);
 });
 
+test("composer registration patches every current Skill trigger map", () => {
+  const source = [
+    "let f={...o?{$:`skill-mention`}:{}};",
+    "controller.setSuggestionTriggers(enabled?{\"/\":`slash-command`,$:`skill-mention`}:{\"/\":`slash-command`});",
+    "const triggers={\"/\":`slash-command`,$:`skill-mention`};",
+  ].join("");
+
+  const patched = applySkillInvocationComposerPatch(source);
+  assert.equal(
+    patched.match(/\$:`skill-mention`,"!":`skill-mention`/gu)?.length,
+    3,
+  );
+  assert.equal(
+    patched.match(new RegExp(COMPOSER_REGISTRATION_PATCH_MARKER, "gu"))?.length,
+    1,
+  );
+  assert.equal(applySkillInvocationComposerPatch(patched), patched);
+});
+
 test("invocation trigger strictly separates automatic and manual-only Skills", () => {
   const matches = Function(
     `${skillInvocationComposerRuntimeSource()};return ${COMPOSER_FILTER_NAME};`,

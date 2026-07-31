@@ -9759,6 +9759,28 @@ test("enables the Electron 42 Computer Use settings card contract on Linux", () 
   assert.match(patched, new RegExp(COMPUTER_USE_AVAILABILITY_MARKER));
 });
 
+test("enables the current direct Computer Use plugin settings contract on Linux", () => {
+  const source =
+    "function Pn(){let e=cache(29),{selectedHostId:t}=host(),i={hostId:t};" +
+    "let a=useAvailability(i),{platform:o}=usePlatform(),s=hostKind(t)===`local`;" +
+    "let y=jsx(In,{computerUseAvailability:a,platform:o});return a.available?y:null}" +
+    "function In(e){let t=cache(50),{computerUseAvailability:n,platform:i}=e;" +
+    "let C=usePlugins(),w=useMarketplacePath(),F=selectPlugin(C.availablePlugins,cr,w);return F}" +
+    "var sr=`computer-use-settings`,cr=`computer-use`,fr=`computer-use-plugin`;";
+
+  const patched = applyPatchTwice(
+    applyLinuxComputerUseRendererAvailabilityPatch,
+    source,
+  );
+
+  assert.match(
+    patched,
+    /o===`linux`&&\(a=\{\.\.\.a,available:!0,isFetching:!1,isLoading:!1\}\);/u,
+  );
+  assert.match(patched, new RegExp(COMPUTER_USE_AVAILABILITY_MARKER));
+  assert.doesNotMatch(patched, /BundledMarketplaceDonor/u);
+});
+
 test("reuses current bundled-plugin metadata for the synthetic Computer Use card", () => {
   const source =
     "function Ht(){let e=cache(24),{selectedHostId:t}=host(),n=data(t),i={hostId:t};" +

@@ -64,14 +64,18 @@ function hasCoherentDisclosureContract(componentText, parameter) {
 
   const effectiveCanExpand = initial[2];
   const effectiveDefaultExpanded = initial[3];
-  const canExpandDefault =
-    `${effectiveCanExpand}=${aliases.canExpand}===void 0?!0:${aliases.canExpand}`;
-  const expandedDefault =
-    `${effectiveDefaultExpanded}=${aliases.defaultExpanded}===void 0?!1:${aliases.defaultExpanded}`;
+  const canExpandDefaults = [
+    `${effectiveCanExpand}=${aliases.canExpand}===void 0?!0:${aliases.canExpand}`,
+    `${effectiveCanExpand}=${aliases.canExpand}===void 0||${aliases.canExpand}`,
+  ];
+  const expandedDefaults = [
+    `${effectiveDefaultExpanded}=${aliases.defaultExpanded}===void 0?!1:${aliases.defaultExpanded}`,
+    `${effectiveDefaultExpanded}=${aliases.defaultExpanded}!==void 0&&${aliases.defaultExpanded}`,
+  ];
 
   return (
-    componentText.includes(canExpandDefault) &&
-    componentText.includes(expandedDefault) &&
+    canExpandDefaults.some((candidate) => componentText.includes(candidate)) &&
+    expandedDefaults.some((candidate) => componentText.includes(candidate)) &&
     initial[4] === aliases.shouldAnimateInitialCollapse &&
     state[3] === initial[1] &&
     toggle[2] === state[4] &&

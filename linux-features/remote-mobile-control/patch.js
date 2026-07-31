@@ -50,8 +50,12 @@ const REMOTE_MOBILE_APP_SERVER_REMOTE_CONTROL_MARKER = "codexLinuxRemoteMobileAp
 const REMOTE_MOBILE_APP_SERVER_RUST_LOG_MARKER = "codexLinuxRemoteMobileRustLog";
 const REMOTE_MOBILE_APP_SERVER_ARGS_NEEDLE =
   "[`-c`,`features.code_mode_host=true`,`app-server`,`--analytics-default-enabled`]";
+const REMOTE_MOBILE_APP_SERVER_CURRENT_ARGS_NEEDLE =
+  "]}),`app-server`,`--analytics-default-enabled`]}";
 const REMOTE_MOBILE_APP_SERVER_RUST_LOG_NEEDLE =
   "codexLinuxHostProcessEnv({...process.env,LOG_FORMAT:`json`,RUST_LOG:process.env.RUST_LOG??`warn`";
+const REMOTE_MOBILE_APP_SERVER_CURRENT_RUST_LOG_NEEDLE =
+  "{...process.env,LOG_FORMAT:`json`,RUST_LOG:process.env.RUST_LOG??`warn`,CODEX_INTERNAL_ORIGINATOR_OVERRIDE:";
 const REMOTE_CONTROL_APP_INITIAL_ASSET_PATTERN = /^app-initial-[^.]+\.js$/u;
 const REMOTE_CONTROL_LINUX_COPY_REPLACEMENTS = [
   ["defaultMessage:`Mac`", "defaultMessage:`Linux`"],
@@ -212,11 +216,21 @@ function applyLinuxRemoteControlClientRevocationRecoveryPatch(source) {
   );
 }
 
+function hasRemoteMobileAppServerArgsContract(source) {
+  return source.includes(REMOTE_MOBILE_APP_SERVER_REMOTE_CONTROL_MARKER) ||
+    source.includes(REMOTE_MOBILE_APP_SERVER_ARGS_NEEDLE) ||
+    source.includes(REMOTE_MOBILE_APP_SERVER_CURRENT_ARGS_NEEDLE);
+}
+
+function hasRemoteMobileAppServerRustLogContract(source) {
+  return source.includes(REMOTE_MOBILE_APP_SERVER_RUST_LOG_MARKER) ||
+    source.includes(REMOTE_MOBILE_APP_SERVER_RUST_LOG_NEEDLE) ||
+    source.includes(REMOTE_MOBILE_APP_SERVER_CURRENT_RUST_LOG_NEEDLE);
+}
+
 function applyLinuxRemoteMobileAppServerRemoteControlPatch(source) {
-  const hasArgsContract = source.includes(REMOTE_MOBILE_APP_SERVER_REMOTE_CONTROL_MARKER) ||
-    source.includes(REMOTE_MOBILE_APP_SERVER_ARGS_NEEDLE);
-  const hasRustLogContract = source.includes(REMOTE_MOBILE_APP_SERVER_RUST_LOG_MARKER) ||
-    source.includes(REMOTE_MOBILE_APP_SERVER_RUST_LOG_NEEDLE);
+  const hasArgsContract = hasRemoteMobileAppServerArgsContract(source);
+  const hasRustLogContract = hasRemoteMobileAppServerRustLogContract(source);
   if (!hasArgsContract || !hasRustLogContract) {
     if (hasArgsContract || hasRustLogContract) {
       console.warn(
@@ -235,6 +249,13 @@ function applyLinuxRemoteMobileAppServerRemoteControlPatch(source) {
       patched = patched
         .split(REMOTE_MOBILE_APP_SERVER_ARGS_NEEDLE)
         .join("codexLinuxRemoteMobileAppServerArgs()");
+    } else if (patched.includes(REMOTE_MOBILE_APP_SERVER_CURRENT_ARGS_NEEDLE)) {
+      helpers +=
+        "function codexLinuxRemoteMobileAppServerArgs(){return process.platform===`linux`?[`--remote-control`]:[]}";
+      patched = patched.replace(
+        REMOTE_MOBILE_APP_SERVER_CURRENT_ARGS_NEEDLE,
+        "]}),`app-server`,...codexLinuxRemoteMobileAppServerArgs(),`--analytics-default-enabled`]}",
+      );
     }
   }
   if (!patched.includes(REMOTE_MOBILE_APP_SERVER_RUST_LOG_MARKER)) {
@@ -244,6 +265,13 @@ function applyLinuxRemoteMobileAppServerRemoteControlPatch(source) {
       patched = patched.replace(
         REMOTE_MOBILE_APP_SERVER_RUST_LOG_NEEDLE,
         "codexLinuxHostProcessEnv({...process.env,LOG_FORMAT:`json`,RUST_LOG:codexLinuxRemoteMobileRustLog()",
+      );
+    } else if (patched.includes(REMOTE_MOBILE_APP_SERVER_CURRENT_RUST_LOG_NEEDLE)) {
+      helpers +=
+        "function codexLinuxRemoteMobileRustLog(){return process.env.RUST_LOG??`warn,codex_app_server_transport::transport::remote_control=info`}";
+      patched = patched.replace(
+        REMOTE_MOBILE_APP_SERVER_CURRENT_RUST_LOG_NEEDLE,
+        "{...process.env,LOG_FORMAT:`json`,RUST_LOG:codexLinuxRemoteMobileRustLog(),CODEX_INTERNAL_ORIGINATOR_OVERRIDE:",
       );
     }
   }
@@ -283,15 +311,17 @@ function applyLinuxRemoteMobileAppServerRemoteControlExtractedAppPatch(extracted
 
   let matched = 0;
   let changed = 0;
+  let partialMatches = 0;
   for (const candidate of candidates) {
     const filePath = path.join(buildDir, candidate);
     const source = fs.readFileSync(filePath, "utf8");
-    if (
-      !source.includes(REMOTE_MOBILE_APP_SERVER_ARGS_NEEDLE) &&
-      !source.includes(REMOTE_MOBILE_APP_SERVER_REMOTE_CONTROL_MARKER) &&
-      !source.includes(REMOTE_MOBILE_APP_SERVER_RUST_LOG_NEEDLE) &&
-      !source.includes(REMOTE_MOBILE_APP_SERVER_RUST_LOG_MARKER)
-    ) {
+    const hasArgsContract = hasRemoteMobileAppServerArgsContract(source);
+    const hasRustLogContract = hasRemoteMobileAppServerRustLogContract(source);
+    if (!hasArgsContract && !hasRustLogContract) {
+      continue;
+    }
+    if (!hasArgsContract || !hasRustLogContract) {
+      partialMatches += 1;
       continue;
     }
     matched += 1;
@@ -302,6 +332,13 @@ function applyLinuxRemoteMobileAppServerRemoteControlExtractedAppPatch(extracted
     }
   }
 
+  if (matched === 0 && partialMatches > 0) {
+    const reason = "Incomplete app-server Remote launch/logging contract";
+    console.warn(
+      "WARN: Incomplete app-server Remote launch/logging contract - skipping Linux remote mobile app-server patch",
+    );
+    return { matched: partialMatches, changed, reason };
+  }
   if (matched === 0) {
     const reason = "no default app-server launch args found";
     console.warn("WARN: Could not find default app-server launch args - skipping remote mobile app-server remote-control patch");

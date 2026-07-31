@@ -61,6 +61,17 @@ test("agent activity disclosure uses a discrete transition without layout measur
   );
 });
 
+test("agent activity disclosure accepts React compiler boolean default forms", () => {
+  const source = fixture()
+    .replace("f=o===void 0?!0:o", "f=o===void 0||o")
+    .replace("p=s===void 0?!1:s", "p=s!==void 0&&s");
+
+  assert.equal(isAgentActivityLayoutAsset(source), true);
+  const patched = applyLinuxAgentActivityLayoutStabilityPatch(source);
+  assert.equal(hasUnsafeAgentActivityLayout(patched), false);
+  assert.doesNotMatch(patched, /height:`auto`/u);
+});
+
 test("agent activity layout patch ignores unrelated motion disclosure code", () => {
   const decoy =
     "function Other(e){return jsx(motion.div,{animate:e?{opacity:1,height:`auto`}:{opacity:0,height:0}})}";

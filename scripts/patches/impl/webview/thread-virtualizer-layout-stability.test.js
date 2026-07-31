@@ -31,6 +31,16 @@ function fixture() {
   ].join("");
 }
 
+function reactCompilerFixture() {
+  return [
+    "function Oe(e){",
+    "let t=(0,He.c)(47),{entries:n,latestTurnSynchronousMeasurementKey:b}=e;",
+    "let Me=(e,t)=>{let r=t===void 0||t,j=()=>{};return r?(0,Ue.flushSync)(j):j(),!0},J=o(Me),",
+    "Xe=()=>{let e=new ResizeObserver(e=>{let t=new Map,n=!1;for(let r of e){switch(r.kind){case`turn`:t.set(r.key,r);break;case`latest-turn-follow-content`:n=!0}}J(t),n&&ke()});return e};",
+    "return C.preserveScrollPositionForNextLayout()}",
+  ].join("");
+}
+
 test("thread virtualizer defers layout-affecting work outside ResizeObserver", () => {
   const source = fixture();
   assert.equal(isThreadVirtualizerLayoutAsset(source), true);
@@ -49,6 +59,19 @@ test("thread virtualizer defers layout-affecting work outside ResizeObserver", (
     /new ResizeObserver\([^;]+\}q\(t\),n&&ae\(\)\}\)/u,
   );
   assert.doesNotMatch(patched, /q\(t,!1\),n&&ae\(\)/u);
+});
+
+test("thread virtualizer accepts React compiler cached updater wrappers", () => {
+  const source = reactCompilerFixture();
+  assert.equal(isThreadVirtualizerLayoutAsset(source), true);
+  assert.equal(hasUnsafeThreadVirtualizerResizeWork(source), true);
+
+  const patched = applyLinuxThreadVirtualizerLayoutStabilityPatch(source);
+  assert.equal(hasUnsafeThreadVirtualizerResizeWork(patched), false);
+  assert.match(
+    patched,
+    /window\.requestAnimationFrame\(\(\)=>\{J\(t\),n&&ke\(\)\}\)/u,
+  );
 });
 
 test("deferred follow work observes the committed turn measurement", () => {

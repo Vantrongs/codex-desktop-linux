@@ -2,8 +2,8 @@
 
 const INSTALL_MARKER = "codexLinuxInstallRendererCrashBreadcrumbs";
 const CONSOLE_PREFIX = "[codex-linux-renderer-breadcrumb]";
-const GLOBAL_ERROR_HANDLER =
-  "window.addEventListener(`error`,e=>{let t=e?.error?.stack??e?.error?.message??e?.message??`Unknown error`;E.dispatchMessage(`log-message`,{level:`error`,message:`[desktop-notifications][global-error] ${String(t)}`})})";
+const GLOBAL_ERROR_HANDLER_PATTERN =
+  /window\.addEventListener\(`error`,([A-Za-z_$][\w$]*)=>\{let ([A-Za-z_$][\w$]*)=\1\?\.error\?\.stack\?\?\1\?\.error\?\.message\?\?\1\?\.message\?\?`Unknown error`;([A-Za-z_$][\w$]*)\.dispatchMessage\(`log-message`,\{level:`error`,message:`\[desktop-notifications\]\[global-error\] \$\{String\(\2\)\}`\}\)\}\)/gu;
 
 function rendererCrashBreadcrumbRuntime() {
   function codexLinuxInstallRendererCrashBreadcrumbs() {
@@ -194,13 +194,11 @@ const RUNTIME_EXPRESSION = `(${rendererCrashBreadcrumbRuntime.toString()})()`;
 function applyLinuxRendererCrashBreadcrumbsPatch(source) {
   if (source.includes(INSTALL_MARKER)) return source;
 
-  const firstHandlerIndex = source.indexOf(GLOBAL_ERROR_HANDLER);
-  if (
-    firstHandlerIndex === -1 ||
-    source.indexOf(GLOBAL_ERROR_HANDLER, firstHandlerIndex + GLOBAL_ERROR_HANDLER.length) !== -1
-  ) {
+  const handlers = [...source.matchAll(GLOBAL_ERROR_HANDLER_PATTERN)];
+  if (handlers.length !== 1) {
     throw new Error("Could not find unique desktop global error handler");
   }
+  const firstHandlerIndex = handlers[0].index;
 
   const patched =
     source.slice(0, firstHandlerIndex) +

@@ -309,22 +309,19 @@ function applySkillInvocationComposerRegistrationPatch(source) {
   if (source.includes(COMPOSER_REGISTRATION_PATCH_MARKER)) {
     return source;
   }
-  const needle = '...a?{$:`skill-mention`}:{},';
-  if (!source.includes(needle)) {
+  const registrationPattern = /\$:`skill-mention`(?!,"!":`skill-mention`)/gu;
+  const registrations = [...source.matchAll(registrationPattern)];
+  if (registrations.length === 0) {
     return source;
   }
-  const patched = replaceExactlyOnce(
-    source,
-    needle,
-    `/*${COMPOSER_REGISTRATION_PATCH_MARKER}*/...a?{$:\`skill-mention\`,"!":\`skill-mention\`}:{},`,
-  );
-  if (patched == null) {
-    warn(
-      `Could not resolve the current composer trigger map (matches: ${countOccurrences(source, needle)})`,
-    );
-    return source;
-  }
-  return patched;
+  let installedMarker = false;
+  return source.replace(registrationPattern, () => {
+    const marker = installedMarker
+      ? ""
+      : `/*${COMPOSER_REGISTRATION_PATCH_MARKER}*/`;
+    installedMarker = true;
+    return `${marker}$:\`skill-mention\`,"!":\`skill-mention\``;
+  });
 }
 
 function applySkillInvocationComposerUiPatch(source) {
@@ -460,7 +457,9 @@ function applySkillInvocationComposerUiPatch(source) {
 }
 
 function applySkillInvocationComposerPatch(source) {
-  const expectsRegistration = source.includes('...a?{$:`skill-mention`}:{},');
+  const expectsRegistration =
+    !source.includes(COMPOSER_REGISTRATION_PATCH_MARKER) &&
+    source.includes('$:`skill-mention`');
   const expectsTrigger = source.includes("nodeBefore?.text") && source.includes("[/@$]");
   const expectsUi = source.includes("composer.skillMentionList.noResults");
   let patched = source;

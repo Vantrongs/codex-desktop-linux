@@ -296,6 +296,13 @@ function syntheticAppServerLaunchBundle() {
   ].join("");
 }
 
+function syntheticCurrentAppServerLaunchBundle() {
+  return [
+    "function uB(){return[...Iz,...Lz.flatMap(({configKey:e,envVar:t})=>{let n=process.env[t]?.trim();return n==null||n===``?[]:[`-c`,`${e}=${JSON.stringify(n)}`]}),`app-server`,`--analytics-default-enabled`]}",
+    "function tB(e){let r={...process.env,LOG_FORMAT:`json`,RUST_LOG:process.env.RUST_LOG??`warn`,CODEX_INTERNAL_ORIGINATOR_OVERRIDE:e.defaultOriginator};return{args:uB(),env:r}}",
+  ].join("");
+}
+
 function evaluateSyntheticAppServerLaunch(source, processEnv = {}) {
   const context = {
     module: { exports: {} },
@@ -1261,6 +1268,20 @@ test("Linux remote mobile app-server launch enables remote control on the Deskto
   assert.equal(applyLinuxRemoteMobileAppServerRemoteControlPatch(patched), patched);
 });
 
+test("Linux remote mobile app-server patch supports the current split host bundle", () => {
+  const source = syntheticCurrentAppServerLaunchBundle();
+  const patched = applyLinuxRemoteMobileAppServerRemoteControlPatch(source);
+
+  assert.notEqual(patched, source);
+  assert.match(patched, /function codexLinuxRemoteMobileAppServerArgs/u);
+  assert.match(
+    patched,
+    /`app-server`,\.\.\.codexLinuxRemoteMobileAppServerArgs\(\),`--analytics-default-enabled`/u,
+  );
+  assert.match(patched, /RUST_LOG:codexLinuxRemoteMobileRustLog\(\)/u);
+  assert.equal(applyLinuxRemoteMobileAppServerRemoteControlPatch(patched), patched);
+});
+
 test("Linux remote mobile app-server logging preserves an explicit RUST_LOG filter", () => {
   const patched = applyLinuxRemoteMobileAppServerRemoteControlPatch(
     syntheticAppServerLaunchBundle(),
@@ -1325,6 +1346,42 @@ test("Linux remote mobile app-server descriptor reports partial contract drift",
 
     assert.equal(report.patches[0]?.status, "skipped-optional");
     assert.match(report.patches[0]?.reason ?? "", /Incomplete app-server Remote/u);
+  } finally {
+    fs.rmSync(extractedDir, { recursive: true, force: true });
+  }
+});
+
+test("Linux remote mobile app-server descriptor ignores unrelated partial candidates when a complete bundle exists", () => {
+  const extractedDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-remote-mobile-complete-"));
+  try {
+    const buildDir = path.join(extractedDir, ".vite", "build");
+    fs.mkdirSync(buildDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(buildDir, "main-partial.js"),
+      "function unrelated(){return [`app-server`,`--analytics-default-enabled`]}",
+    );
+    fs.writeFileSync(
+      path.join(buildDir, "src-complete.js"),
+      syntheticCurrentAppServerLaunchBundle(),
+    );
+    const descriptor = remoteMobilePatchDescriptors.find(
+      ({ id }) => id === "linux-remote-mobile-app-server-remote-control",
+    );
+    const report = createPatchReport();
+    applyExtractedAppPatchDescriptors(
+      extractedDir,
+      [descriptor],
+      {},
+      report,
+      "extracted-app:post-webview",
+    );
+
+    assert.equal(report.patches[0]?.status, "applied");
+    assert.equal(report.patches[0]?.warnings, undefined);
+    assert.match(
+      fs.readFileSync(path.join(buildDir, "src-complete.js"), "utf8"),
+      /codexLinuxRemoteMobileAppServerArgs/u,
+    );
   } finally {
     fs.rmSync(extractedDir, { recursive: true, force: true });
   }

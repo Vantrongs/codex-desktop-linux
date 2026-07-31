@@ -417,8 +417,19 @@ function applyCurrentComputerUseSettingsContract(currentSource) {
     /let ([A-Za-z_$][\w$]*BundledMarketplaceDonor)=([A-Za-z_$][\w$]*)\.availablePlugins\.find\(e=>e\.marketplaceName===`openai-bundled`&&typeof e\.marketplacePath===`string`&&e\.marketplacePath\.startsWith\(`\/`\)&&e\.marketplacePath\.endsWith\(`\/\.agents\/plugins\/marketplace\.json`\)\);[^;]{0,1800}marketplacePath:\1\.marketplacePath/;
   const hasAvailabilityMarker = availabilityMarkerPattern.test(currentSource);
   const hasCardMarker = cardMarkerPattern.test(currentSource);
+  const directPluginMatches = [
+    ...currentSource.matchAll(
+      /([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\.availablePlugins,([A-Za-z_$][\w$]*),([A-Za-z_$][\w$]*)\)/gu,
+    ),
+  ].filter((match) =>
+    new RegExp(
+      `(?:var |,)${match[4]}=\`computer-use\`(?:,|;)`,
+      "u",
+    ).test(currentSource),
+  );
+  const hasDirectPluginContract = directPluginMatches.length === 1;
 
-  if (hasAvailabilityMarker && hasCardMarker) {
+  if (hasAvailabilityMarker && (hasCardMarker || hasDirectPluginContract)) {
     return currentSource.includes(COMPUTER_USE_AVAILABILITY_MARKER)
       ? currentSource
       : currentSource.replace(
@@ -426,7 +437,7 @@ function applyCurrentComputerUseSettingsContract(currentSource) {
         `/*${COMPUTER_USE_AVAILABILITY_MARKER}*/$&`,
       );
   }
-  if (hasAvailabilityMarker !== hasCardMarker) {
+  if (hasAvailabilityMarker || hasCardMarker) {
     console.warn(
       "WARN: Could not find the complete current Computer Use settings contract — skipping Linux Computer Use UI availability patch",
     );
@@ -490,9 +501,9 @@ function applyCurrentComputerUseSettingsContract(currentSource) {
 
   if (
     availabilityChanged &&
-    cardChanged &&
     availabilityMarkerPattern.test(patchedSource) &&
-    cardMarkerPattern.test(patchedSource)
+    (hasDirectPluginContract ||
+      (cardChanged && cardMarkerPattern.test(patchedSource)))
   ) {
     return patchedSource;
   }

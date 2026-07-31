@@ -21,13 +21,13 @@ function createResizeObserverPattern({ deferredUpdater }) {
 }
 
 function hasSynchronousMeasurementUpdater(componentText, updaterAlias) {
-  const updaterPattern = new RegExp(
-    `(?:let\\s+|,)${escapeRegExp(updaterAlias)}=(${IDENTIFIER})\\(\\((${IDENTIFIER}),(${IDENTIFIER})=!0\\)=>\\{`,
+  const wrappedUpdaterPattern = new RegExp(
+    `(?<![\\w$.])${escapeRegExp(updaterAlias)}=(${IDENTIFIER})\\(\\((${IDENTIFIER}),(${IDENTIFIER})=!0\\)=>\\{`,
     "gu",
   );
   const matches = [];
   let match;
-  while ((match = updaterPattern.exec(componentText)) != null) {
+  while ((match = wrappedUpdaterPattern.exec(componentText)) != null) {
     const openBrace = match.index + match[0].length - 1;
     const closeBrace = findMatchingBrace(componentText, openBrace);
     if (closeBrace === -1 || componentText[closeBrace + 1] !== ")") {
@@ -40,7 +40,43 @@ function hasSynchronousMeasurementUpdater(componentText, updaterAlias) {
     );
     if (flushPattern.test(body)) matches.push(match);
   }
+
+  const directUpdaterPattern = new RegExp(
+    `(?<![\\w$.])${escapeRegExp(updaterAlias)}=\\((${IDENTIFIER}),(${IDENTIFIER})\\)=>\\{`,
+    "gu",
+  );
+  while ((match = directUpdaterPattern.exec(componentText)) != null) {
+    const openBrace = match.index + match[0].length - 1;
+    const closeBrace = findMatchingBrace(componentText, openBrace);
+    if (closeBrace === -1) continue;
+    const body = componentText.slice(openBrace + 1, closeBrace);
+    const effectiveSyncMatch = new RegExp(
+      `(?:let\\s+|,)(${IDENTIFIER})=${escapeRegExp(match[2])}===void 0\\|\\|${escapeRegExp(match[2])}(?:,|;)`,
+      "u",
+    ).exec(body);
+    if (effectiveSyncMatch == null) continue;
+    const flushPattern = new RegExp(
+      `${escapeRegExp(effectiveSyncMatch[1])}\\?\\(0,${IDENTIFIER}\\.flushSync\\)\\((${IDENTIFIER})\\):\\1\\(\\)`,
+      "u",
+    );
+    if (flushPattern.test(body)) matches.push(match);
+  }
   return matches.length === 1;
+}
+
+function updaterHasSynchronousMeasurement(componentText, updaterAlias) {
+  if (hasSynchronousMeasurementUpdater(componentText, updaterAlias)) return true;
+  const wrapperPattern = new RegExp(
+    `(?<![\\w$.])${escapeRegExp(updaterAlias)}=${IDENTIFIER}\\((${IDENTIFIER})\\)(?:,|;)`,
+    "gu",
+  );
+  const implementationAliases = [
+    ...componentText.matchAll(wrapperPattern),
+  ].map((match) => match[1]);
+  return (
+    implementationAliases.length === 1 &&
+    hasSynchronousMeasurementUpdater(componentText, implementationAliases[0])
+  );
 }
 
 function observerShadowsUpdater(observerMatch, updaterAlias) {
@@ -66,7 +102,7 @@ function findUnsafeResizeObservers(componentText, { deferredUpdater }) {
   while ((match = observerPattern.exec(componentText)) != null) {
     const updaterAlias = match[5];
     if (observerShadowsUpdater(match, updaterAlias)) continue;
-    if (!hasSynchronousMeasurementUpdater(componentText, updaterAlias)) continue;
+    if (!updaterHasSynchronousMeasurement(componentText, updaterAlias)) continue;
     matches.push({
       match,
       measurementsAlias: match[2],
@@ -82,12 +118,12 @@ function findThreadVirtualizerComponents(
 ) {
   const candidates = [];
   const functionPattern = new RegExp(
-    `function (${IDENTIFIER})\\(\\{entries:`,
+    `function (${IDENTIFIER})\\((?:\\{[^)]*\\}|${IDENTIFIER})\\)\\{`,
     "gu",
   );
   let match;
   while ((match = functionPattern.exec(source)) != null) {
-    const openBrace = source.indexOf("{", match.index + match[0].length - 1);
+    const openBrace = match.index + match[0].length - 1;
     const closeBrace = findMatchingBrace(source, openBrace);
     if (openBrace === -1 || closeBrace === -1) continue;
     const text = source.slice(match.index, closeBrace + 1);

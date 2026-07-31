@@ -163,6 +163,13 @@ test("renderer crash breadcrumbs fail closed when the upstream handler drifts", 
   );
 });
 
+test("renderer crash breadcrumbs accept a renamed dispatch bridge alias", () => {
+  const source = fixture().replace("E.dispatchMessage", "n.dispatchMessage");
+  const patched = applyLinuxRendererCrashBreadcrumbsPatch(source);
+  assert.match(patched, /codexLinuxInstallRendererCrashBreadcrumbs/u);
+  assert.match(patched, /n\.dispatchMessage/u);
+});
+
 test("renderer crash breadcrumb descriptor installs and verifies both markers", () => {
   const extractedDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-breadcrumbs-"));
   try {
