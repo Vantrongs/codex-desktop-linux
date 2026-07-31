@@ -7,7 +7,7 @@ index 9bb7f76..db4b247 100644
  pub(crate) const MAX_WAIT_TIMEOUT_MS: i64 = HARD_MAX_MULTI_AGENT_V2_TIMEOUT_MS;
  pub(crate) const MAX_SPAWN_AGENT_MODEL_OVERRIDES: usize = 5;
 +const MULTI_AGENT_V2_COMPATIBILITY_MODEL_OVERRIDES: &[&str] = &["gpt-5.6-luna"];
- 
+
  pub(crate) fn model_supports_multi_agent_backend(
      model: &ModelPreset,
 @@ -37,6 +38,8 @@ pub(crate) fn model_supports_multi_agent_backend(
@@ -17,24 +17,90 @@ index 9bb7f76..db4b247 100644
 +        || (model.multi_agent_version == Some(MultiAgentVersion::V1)
 +            && MULTI_AGENT_V2_COMPATIBILITY_MODEL_OVERRIDES.contains(&model.model.as_str()))
  }
- 
+
  pub(crate) fn function_arguments(payload: ToolPayload) -> Result<String, FunctionCallError> {
 diff --git a/core/src/tools/handlers/multi_agents_spec.rs b/core/src/tools/handlers/multi_agents_spec.rs
-index 2eb82e1..b9fa216 100644
+index 2eb82e1..85b2411 100644
 --- a/core/src/tools/handlers/multi_agents_spec.rs
 +++ b/core/src/tools/handlers/multi_agents_spec.rs
-@@ -110,9 +110,6 @@ pub fn create_spawn_agent_tool_v2(options: SpawnAgentToolOptions) -> ToolSpec {
-     if !options.expose_agent_type {
-         properties.remove("agent_type");
-     }
--    if options.hide_agent_type_model_reasoning {
--        properties.remove("service_tier");
--    }
-     if !options.expose_spawn_agent_model_overrides {
-         properties.remove("model");
-         properties.remove("reasoning_effort");
+@@ -145,6 +145,41 @@ pub fn create_spawn_agent_tool_v2(options: SpawnAgentToolOptions) -> ToolSpec {
+     })
+ }
+
++pub fn create_spawn_agent_v2_override_tool(options: SpawnAgentToolOptions) -> ToolSpec {
++    let available_models_description = spawn_agent_override_models_description(
++        &options.available_models,
++        options.multi_agent_version,
++    );
++    let mut properties = spawn_agent_common_properties_v2(&options.agent_type_description);
++    if !options.expose_agent_type {
++        properties.remove("agent_type");
++    }
++    properties.insert(
++        "task_name".to_string(),
++        JsonSchema::string(Some(
++            "Task name for the new agent. Use lowercase letters, digits, and underscores."
++                .to_string(),
++        )),
++    );
++
++    ToolSpec::Function(ResponsesApiTool {
++        name: "spawn_agent_v2".to_string(),
++        description: format!(
++            "Local MultiAgentV2 spawn path for explicit model, reasoning-effort, or service-tier overrides. Use the standard spawn_agent tool when no override is needed.\n{available_models_description}"
++        ),
++        strict: false,
++        defer_loading: None,
++        parameters: JsonSchema::object(
++            properties,
++            Some(vec!["task_name".to_string(), "message".to_string()]),
++            Some(false.into()),
++        ),
++        output_schema: Some(spawn_agent_output_schema_v2(
++            options.hide_agent_type_model_reasoning,
++        )),
++    })
++}
++
+ pub fn create_send_input_tool_v1() -> ToolSpec {
+     let properties = BTreeMap::from([
+         (
+@@ -785,7 +820,10 @@ fn spawn_agent_models_description(
+     let visible_models: Vec<&ModelPreset> = models
+         .iter()
+         .filter(|model| model.show_in_picker)
+-        .filter(|model| model_supports_multi_agent_backend(model, multi_agent_version))
++        .filter(|model| {
++            multi_agent_version != MultiAgentVersion::V2
++                || model.multi_agent_version == Some(multi_agent_version)
++        })
+         .take(MAX_SPAWN_AGENT_MODEL_OVERRIDES)
+         .collect();
+     if visible_models.is_empty() {
+@@ -845,6 +883,21 @@ fn spawn_agent_models_description(
+     )
+ }
+
++fn spawn_agent_override_models_description(
++    models: &[ModelPreset],
++    multi_agent_version: MultiAgentVersion,
++) -> String {
++    let compatible_models = models
++        .iter()
++        .filter(|model| {
++            multi_agent_version != MultiAgentVersion::V2
++                || model_supports_multi_agent_backend(model, multi_agent_version)
++        })
++        .cloned()
++        .collect::<Vec<_>>();
++    spawn_agent_models_description(&compatible_models, MultiAgentVersion::Disabled)
++}
++
+ fn wait_agent_tool_parameters_v1(options: WaitAgentTimeoutOptions) -> JsonSchema {
+     let properties = BTreeMap::from([
+         (
 diff --git a/core/src/tools/handlers/multi_agents_spec_tests.rs b/core/src/tools/handlers/multi_agents_spec_tests.rs
-index 96a6212..38ab186 100644
+index 96a6212..1c60ee4 100644
 --- a/core/src/tools/handlers/multi_agents_spec_tests.rs
 +++ b/core/src/tools/handlers/multi_agents_spec_tests.rs
 @@ -41,11 +41,15 @@ fn model_preset(id: &str, show_in_picker: bool) -> ModelPreset {
@@ -57,47 +123,63 @@ index 96a6212..38ab186 100644
      ));
      assert!(!description.contains("hidden-model"));
      assert!(!description.contains("incompatible-model"));
-+    assert!(description.contains("`gpt-5.6-luna`"));
++    assert!(!description.contains("`gpt-5.6-luna`"));
      assert!(properties.contains_key("task_name"));
      assert!(properties.contains_key("message"));
      assert_eq!(
-@@ -236,7 +241,7 @@ fn spawn_agent_tool_caps_reasoning_effort_value_length() {
- }
- 
- #[test]
--fn spawn_agent_tool_keeps_model_controls_when_spawn_metadata_is_hidden() {
-+fn spawn_agent_tool_keeps_override_controls_when_spawn_metadata_is_hidden() {
-     let tool = create_spawn_agent_tool_v2(SpawnAgentToolOptions {
-         available_models: vec![model_preset("visible", /*show_in_picker*/ true)],
-         agent_type_description: "role help".to_string(),
-@@ -263,13 +268,13 @@ fn spawn_agent_tool_keeps_model_controls_when_spawn_metadata_is_hidden() {
-     assert!(!properties.contains_key("agent_type"));
-     assert!(properties.contains_key("model"));
-     assert!(properties.contains_key("reasoning_effort"));
--    assert!(!properties.contains_key("service_tier"));
-+    assert!(properties.contains_key("service_tier"));
-     assert!(!description.contains(SPAWN_AGENT_INHERITED_MODEL_GUIDANCE));
-     assert!(description.contains("Available model overrides"));
- }
- 
- #[test]
--fn spawn_agent_tool_hides_model_controls_without_override_exposure() {
-+fn spawn_agent_tool_keeps_service_tier_without_model_override_exposure() {
-     let tool = create_spawn_agent_tool_v2(SpawnAgentToolOptions {
-         available_models: vec![model_preset("visible", /*show_in_picker*/ true)],
-         agent_type_description: "role help".to_string(),
-@@ -293,9 +298,10 @@ fn spawn_agent_tool_hides_model_controls_without_override_exposure() {
+@@ -293,13 +298,51 @@ fn spawn_agent_tool_hides_model_controls_without_override_exposure() {
          .as_ref()
          .expect("spawn_agent should use object params");
- 
+
 -    for property in ["agent_type", "model", "reasoning_effort", "service_tier"] {
 +    for property in ["agent_type", "model", "reasoning_effort"] {
          assert!(!properties.contains_key(property));
      }
-+    assert!(properties.contains_key("service_tier"));
++    assert!(!properties.contains_key("service_tier"));
      assert!(!description.contains(SPAWN_AGENT_INHERITED_MODEL_GUIDANCE));
      assert!(!description.contains("Available model overrides"));
  }
+
++#[test]
++fn spawn_agent_v2_override_tool_exposes_luna_and_service_tier_without_changing_reserved_schema() {
++    let mut luna = model_preset("luna", /*show_in_picker*/ true);
++    luna.model = "gpt-5.6-luna".to_string();
++    luna.multi_agent_version = Some(MultiAgentVersion::V1);
++    let tool = create_spawn_agent_v2_override_tool(SpawnAgentToolOptions {
++        available_models: vec![luna],
++        agent_type_description: "role help".to_string(),
++        expose_agent_type: false,
++        hide_agent_type_model_reasoning: true,
++        expose_spawn_agent_model_overrides: false,
++        multi_agent_version: MultiAgentVersion::V2,
++        usage_hint_text: None,
++    });
++
++    let ToolSpec::Function(ResponsesApiTool {
++        name,
++        description,
++        parameters,
++        ..
++    }) = tool
++    else {
++        panic!("spawn_agent_v2 should be a function tool");
++    };
++    let properties = parameters
++        .properties
++        .as_ref()
++        .expect("spawn_agent_v2 should use object params");
++
++    assert_eq!(name, "spawn_agent_v2");
++    assert!(!properties.contains_key("agent_type"));
++    for property in ["model", "reasoning_effort", "service_tier"] {
++        assert!(properties.contains_key(property));
++    }
++    assert!(description.contains("`gpt-5.6-luna`"));
++}
++
+ #[test]
+ fn send_message_tool_requires_message_and_has_no_output_schema() {
+     let ToolSpec::Function(ResponsesApiTool {
 diff --git a/core/src/tools/handlers/multi_agents_tests.rs b/core/src/tools/handlers/multi_agents_tests.rs
 index 5e5884d..9825369 100644
 --- a/core/src/tools/handlers/multi_agents_tests.rs
@@ -105,7 +187,7 @@ index 5e5884d..9825369 100644
 @@ -426,6 +426,39 @@ async fn multi_agent_v2_spawn_rejects_child_model_from_different_backend() {
      );
  }
- 
+
 +#[tokio::test]
 +async fn multi_agent_v2_spawn_accepts_luna_compatibility_model() {
 +    let (mut session, mut turn) = make_session_and_context().await;
@@ -142,3 +224,118 @@ index 5e5884d..9825369 100644
  #[tokio::test]
  async fn spawn_agent_service_tier_override_validates_the_effective_child_model() {
      #[derive(Debug, Deserialize)]
+diff --git a/core/src/tools/handlers/multi_agents_v2.rs b/core/src/tools/handlers/multi_agents_v2.rs
+index 7ee0205..1101e42 100644
+--- a/core/src/tools/handlers/multi_agents_v2.rs
++++ b/core/src/tools/handlers/multi_agents_v2.rs
+@@ -31,6 +31,7 @@ pub(crate) use interrupt_agent::Handler as InterruptAgentHandler;
+ pub(crate) use list_agents::Handler as ListAgentsHandler;
+ pub(crate) use send_message::Handler as SendMessageHandler;
+ pub(crate) use spawn::Handler as SpawnAgentHandler;
++pub(crate) use spawn::OverrideHandler as SpawnAgentOverrideHandler;
+ pub(crate) use wait::Handler as WaitAgentHandler;
+
+ mod followup_task;
+diff --git a/core/src/tools/handlers/multi_agents_v2/spawn.rs b/core/src/tools/handlers/multi_agents_v2/spawn.rs
+index 67f8057..753d669 100644
+--- a/core/src/tools/handlers/multi_agents_v2/spawn.rs
++++ b/core/src/tools/handlers/multi_agents_v2/spawn.rs
+@@ -7,6 +7,7 @@ use crate::agent_communication::AgentCommunicationContext;
+ use crate::agent_communication::AgentCommunicationKind;
+ use crate::tools::handlers::multi_agents_spec::SpawnAgentToolOptions;
+ use crate::tools::handlers::multi_agents_spec::create_spawn_agent_tool_v2;
++use crate::tools::handlers::multi_agents_spec::create_spawn_agent_v2_override_tool;
+ use crate::tools::handlers::multi_agents_v2::message_tool::message_content;
+ use codex_protocol::AgentPath;
+ use codex_tools::ToolSpec;
+@@ -170,6 +171,37 @@ impl CoreToolRuntime for Handler {
+     }
+ }
+
++#[derive(Default)]
++pub(crate) struct OverrideHandler {
++    options: SpawnAgentToolOptions,
++}
++
++impl OverrideHandler {
++    pub(crate) fn new(options: SpawnAgentToolOptions) -> Self {
++        Self { options }
++    }
++}
++
++impl ToolExecutor<ToolInvocation> for OverrideHandler {
++    fn tool_name(&self) -> ToolName {
++        ToolName::plain("spawn_agent_v2")
++    }
++
++    fn spec(&self) -> ToolSpec {
++        create_spawn_agent_v2_override_tool(self.options.clone())
++    }
++
++    fn handle(&self, invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'_> {
++        Box::pin(async move { handle_spawn_agent(invocation).await.map(boxed_tool_output) })
++    }
++}
++
++impl CoreToolRuntime for OverrideHandler {
++    fn matches_kind(&self, payload: &ToolPayload) -> bool {
++        matches!(payload, ToolPayload::Function { .. })
++    }
++}
++
+ #[derive(Debug, Deserialize)]
+ #[serde(deny_unknown_fields)]
+ struct SpawnAgentArgs {
+diff --git a/core/src/tools/spec_plan.rs b/core/src/tools/spec_plan.rs
+index 5ff9e39..c6167d7 100644
+--- a/core/src/tools/spec_plan.rs
++++ b/core/src/tools/spec_plan.rs
+@@ -47,6 +47,7 @@ use crate::tools::handlers::multi_agents_v2::InterruptAgentHandler;
+ use crate::tools::handlers::multi_agents_v2::ListAgentsHandler as ListAgentsHandlerV2;
+ use crate::tools::handlers::multi_agents_v2::SendMessageHandler as SendMessageHandlerV2;
+ use crate::tools::handlers::multi_agents_v2::SpawnAgentHandler as SpawnAgentHandlerV2;
++use crate::tools::handlers::multi_agents_v2::SpawnAgentOverrideHandler as SpawnAgentOverrideHandlerV2;
+ use crate::tools::handlers::multi_agents_v2::WaitAgentHandler as WaitAgentHandlerV2;
+ use crate::tools::handlers::tool_search_spec::ToolSearchSourceListing;
+ use crate::tools::handlers::view_image_spec::ViewImageToolOptions;
+@@ -842,7 +843,7 @@ fn add_collaboration_tools(context: &CoreToolPlanContext<'_>, planned_tools: &mu
+                 multi_agent_v2_handler(
+                     SpawnAgentHandlerV2::new(SpawnAgentToolOptions {
+                         available_models: turn_context.available_models.clone(),
+-                        agent_type_description,
++                        agent_type_description: agent_type_description.clone(),
+                         expose_agent_type: !turn_context.config.agent_roles.is_empty(),
+                         hide_agent_type_model_reasoning: hide_spawn_agent_metadata,
+                         expose_spawn_agent_model_overrides: turn_context
+@@ -856,6 +857,18 @@ fn add_collaboration_tools(context: &CoreToolPlanContext<'_>, planned_tools: &mu
+                 ),
+                 exposure,
+             ));
++            planned_tools.add_arc(override_tool_exposure(
++                Arc::new(SpawnAgentOverrideHandlerV2::new(SpawnAgentToolOptions {
++                    available_models: turn_context.available_models.clone(),
++                    agent_type_description,
++                    expose_agent_type: !turn_context.config.agent_roles.is_empty(),
++                    hide_agent_type_model_reasoning: hide_spawn_agent_metadata,
++                    expose_spawn_agent_model_overrides: true,
++                    multi_agent_version: turn_context.multi_agent_version,
++                    usage_hint_text: turn_context.config.multi_agent_v2.usage_hint_text.clone(),
++                })),
++                exposure,
++            ));
+             planned_tools.add_arc(override_tool_exposure(
+                 multi_agent_v2_handler(SendMessageHandlerV2, tool_namespace),
+                 exposure,
+diff --git a/core/src/tools/spec_plan_tests.rs b/core/src/tools/spec_plan_tests.rs
+index 87be4d9..ac67b5a 100644
+--- a/core/src/tools/spec_plan_tests.rs
++++ b/core/src/tools/spec_plan_tests.rs
+@@ -1470,7 +1470,7 @@ async fn multi_agent_feature_selects_one_agent_tool_family() {
+         });
+     })
+     .await;
+-    v2.assert_visible_contains(&[MULTI_AGENT_V2_NAMESPACE]);
++    v2.assert_visible_contains(&[MULTI_AGENT_V2_NAMESPACE, "spawn_agent_v2"]);
+     v2.assert_visible_lacks(&[
+         "spawn_agent",
+         "send_message",
