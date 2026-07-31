@@ -1,0 +1,144 @@
+diff --git a/core/src/tools/handlers/multi_agents_common.rs b/core/src/tools/handlers/multi_agents_common.rs
+index 9bb7f76..db4b247 100644
+--- a/core/src/tools/handlers/multi_agents_common.rs
++++ b/core/src/tools/handlers/multi_agents_common.rs
+@@ -30,6 +30,7 @@ pub(crate) const MIN_WAIT_TIMEOUT_MS: i64 = DEFAULT_MULTI_AGENT_V2_MIN_WAIT_TIME
+ pub(crate) const DEFAULT_WAIT_TIMEOUT_MS: i64 = 30_000;
+ pub(crate) const MAX_WAIT_TIMEOUT_MS: i64 = HARD_MAX_MULTI_AGENT_V2_TIMEOUT_MS;
+ pub(crate) const MAX_SPAWN_AGENT_MODEL_OVERRIDES: usize = 5;
++const MULTI_AGENT_V2_COMPATIBILITY_MODEL_OVERRIDES: &[&str] = &["gpt-5.6-luna"];
+ 
+ pub(crate) fn model_supports_multi_agent_backend(
+     model: &ModelPreset,
+@@ -37,6 +38,8 @@ pub(crate) fn model_supports_multi_agent_backend(
+ ) -> bool {
+     multi_agent_version != MultiAgentVersion::V2
+         || model.multi_agent_version == Some(multi_agent_version)
++        || (model.multi_agent_version == Some(MultiAgentVersion::V1)
++            && MULTI_AGENT_V2_COMPATIBILITY_MODEL_OVERRIDES.contains(&model.model.as_str()))
+ }
+ 
+ pub(crate) fn function_arguments(payload: ToolPayload) -> Result<String, FunctionCallError> {
+diff --git a/core/src/tools/handlers/multi_agents_spec.rs b/core/src/tools/handlers/multi_agents_spec.rs
+index 2eb82e1..b9fa216 100644
+--- a/core/src/tools/handlers/multi_agents_spec.rs
++++ b/core/src/tools/handlers/multi_agents_spec.rs
+@@ -110,9 +110,6 @@ pub fn create_spawn_agent_tool_v2(options: SpawnAgentToolOptions) -> ToolSpec {
+     if !options.expose_agent_type {
+         properties.remove("agent_type");
+     }
+-    if options.hide_agent_type_model_reasoning {
+-        properties.remove("service_tier");
+-    }
+     if !options.expose_spawn_agent_model_overrides {
+         properties.remove("model");
+         properties.remove("reasoning_effort");
+diff --git a/core/src/tools/handlers/multi_agents_spec_tests.rs b/core/src/tools/handlers/multi_agents_spec_tests.rs
+index 96a6212..38ab186 100644
+--- a/core/src/tools/handlers/multi_agents_spec_tests.rs
++++ b/core/src/tools/handlers/multi_agents_spec_tests.rs
+@@ -41,11 +41,15 @@ fn model_preset(id: &str, show_in_picker: bool) -> ModelPreset {
+ fn spawn_agent_tool_v2_requires_task_name_and_lists_visible_models() {
+     let mut incompatible = model_preset("incompatible", /*show_in_picker*/ true);
+     incompatible.multi_agent_version = Some(MultiAgentVersion::V1);
++    let mut luna = model_preset("luna", /*show_in_picker*/ true);
++    luna.model = "gpt-5.6-luna".to_string();
++    luna.multi_agent_version = Some(MultiAgentVersion::V1);
+     let tool = create_spawn_agent_tool_v2(SpawnAgentToolOptions {
+         available_models: vec![
+             model_preset("visible", /*show_in_picker*/ true),
+             model_preset("hidden", /*show_in_picker*/ false),
+             incompatible,
++            luna,
+         ],
+         agent_type_description: "role help".to_string(),
+         expose_agent_type: true,
+@@ -85,6 +89,7 @@ fn spawn_agent_tool_v2_requires_task_name_and_lists_visible_models() {
+     ));
+     assert!(!description.contains("hidden-model"));
+     assert!(!description.contains("incompatible-model"));
++    assert!(description.contains("`gpt-5.6-luna`"));
+     assert!(properties.contains_key("task_name"));
+     assert!(properties.contains_key("message"));
+     assert_eq!(
+@@ -236,7 +241,7 @@ fn spawn_agent_tool_caps_reasoning_effort_value_length() {
+ }
+ 
+ #[test]
+-fn spawn_agent_tool_keeps_model_controls_when_spawn_metadata_is_hidden() {
++fn spawn_agent_tool_keeps_override_controls_when_spawn_metadata_is_hidden() {
+     let tool = create_spawn_agent_tool_v2(SpawnAgentToolOptions {
+         available_models: vec![model_preset("visible", /*show_in_picker*/ true)],
+         agent_type_description: "role help".to_string(),
+@@ -263,13 +268,13 @@ fn spawn_agent_tool_keeps_model_controls_when_spawn_metadata_is_hidden() {
+     assert!(!properties.contains_key("agent_type"));
+     assert!(properties.contains_key("model"));
+     assert!(properties.contains_key("reasoning_effort"));
+-    assert!(!properties.contains_key("service_tier"));
++    assert!(properties.contains_key("service_tier"));
+     assert!(!description.contains(SPAWN_AGENT_INHERITED_MODEL_GUIDANCE));
+     assert!(description.contains("Available model overrides"));
+ }
+ 
+ #[test]
+-fn spawn_agent_tool_hides_model_controls_without_override_exposure() {
++fn spawn_agent_tool_keeps_service_tier_without_model_override_exposure() {
+     let tool = create_spawn_agent_tool_v2(SpawnAgentToolOptions {
+         available_models: vec![model_preset("visible", /*show_in_picker*/ true)],
+         agent_type_description: "role help".to_string(),
+@@ -293,9 +298,10 @@ fn spawn_agent_tool_hides_model_controls_without_override_exposure() {
+         .as_ref()
+         .expect("spawn_agent should use object params");
+ 
+-    for property in ["agent_type", "model", "reasoning_effort", "service_tier"] {
++    for property in ["agent_type", "model", "reasoning_effort"] {
+         assert!(!properties.contains_key(property));
+     }
++    assert!(properties.contains_key("service_tier"));
+     assert!(!description.contains(SPAWN_AGENT_INHERITED_MODEL_GUIDANCE));
+     assert!(!description.contains("Available model overrides"));
+ }
+diff --git a/core/src/tools/handlers/multi_agents_tests.rs b/core/src/tools/handlers/multi_agents_tests.rs
+index 5e5884d..9825369 100644
+--- a/core/src/tools/handlers/multi_agents_tests.rs
++++ b/core/src/tools/handlers/multi_agents_tests.rs
+@@ -426,6 +426,39 @@ async fn multi_agent_v2_spawn_rejects_child_model_from_different_backend() {
+     );
+ }
+ 
++#[tokio::test]
++async fn multi_agent_v2_spawn_accepts_luna_compatibility_model() {
++    let (mut session, mut turn) = make_session_and_context().await;
++    let manager = thread_manager();
++    let root = manager
++        .start_thread(StartThreadOptions::new((*turn.config).clone()))
++        .await
++        .expect("root thread should start");
++    session.services.agent_control = manager.agent_control();
++    session.thread_id = root.thread_id;
++    let mut config = (*turn.config).clone();
++    config
++        .features
++        .enable(Feature::MultiAgentV2)
++        .expect("test config should allow feature update");
++    set_turn_config(&mut turn, config);
++
++    SpawnAgentHandlerV2::default()
++        .handle(invocation(
++            Arc::new(session),
++            Arc::new(turn),
++            "spawn_agent",
++            function_payload(json!({
++                "message": "inspect this repo",
++                "task_name": "luna_compatibility",
++                "model": "gpt-5.6-luna",
++                "fork_turns": "none"
++            })),
++        ))
++        .await
++        .expect("Luna should be accepted by the local MultiAgentV2 runtime");
++}
++
+ #[tokio::test]
+ async fn spawn_agent_service_tier_override_validates_the_effective_child_model() {
+     #[derive(Debug, Deserialize)]
