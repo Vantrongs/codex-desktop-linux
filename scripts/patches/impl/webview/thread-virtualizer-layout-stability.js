@@ -5,14 +5,20 @@ const {
   findMatchingBrace,
 } = require("../../lib/minified-js.js");
 
-const THREAD_VIRTUALIZER_LAYOUT_MARKER =
+const LEGACY_THREAD_VIRTUALIZER_LAYOUT_MARKER =
   "codexLinuxThreadVirtualizerDeferredResizeMeasurement";
+const THREAD_VIRTUALIZER_LAYOUT_MARKER =
+  "codexLinuxThreadVirtualizerDeferredResizeWork";
 
 const IDENTIFIER = "[A-Za-z_$][\\w$]*";
-const RESIZE_OBSERVER_PATTERN = new RegExp(
-  `new ResizeObserver\\((${IDENTIFIER})=>\\{let (${IDENTIFIER})=new Map,(${IDENTIFIER})=!1;([\\s\\S]{0,1800}?)(${IDENTIFIER})\\(\\2\\),\\3&&(${IDENTIFIER})\\(\\)\\}\\)`,
-  "u",
-);
+
+function createResizeObserverPattern({ deferredUpdater }) {
+  const updaterArguments = deferredUpdater ? "\\2,!1" : "\\2";
+  return new RegExp(
+    `new ResizeObserver\\((${IDENTIFIER})=>\\{let (${IDENTIFIER})=new Map,(${IDENTIFIER})=!1;([\\s\\S]{0,1800}?)(${IDENTIFIER})\\(${updaterArguments}\\),\\3&&(${IDENTIFIER})\\(\\)\\}\\)`,
+    "u",
+  );
+}
 
 function hasSynchronousMeasurementUpdater(componentText, updaterAlias) {
   const updaterPattern = new RegExp(
@@ -50,9 +56,12 @@ function observerShadowsUpdater(observerMatch, updaterAlias) {
   return anyPriorAliasUse.test(observerMatch[4]);
 }
 
-function findUnsafeResizeObservers(componentText) {
+function findUnsafeResizeObservers(componentText, { deferredUpdater }) {
   const matches = [];
-  const observerPattern = new RegExp(RESIZE_OBSERVER_PATTERN.source, "gu");
+  const observerPattern = new RegExp(
+    createResizeObserverPattern({ deferredUpdater }).source,
+    "gu",
+  );
   let match;
   while ((match = observerPattern.exec(componentText)) != null) {
     const updaterAlias = match[5];
@@ -67,7 +76,10 @@ function findUnsafeResizeObservers(componentText) {
   return matches;
 }
 
-function findThreadVirtualizerComponents(source) {
+function findThreadVirtualizerComponents(
+  source,
+  { deferredUpdater = false } = {},
+) {
   const candidates = [];
   const functionPattern = new RegExp(
     `function (${IDENTIFIER})\\(\\{entries:`,
@@ -85,7 +97,7 @@ function findThreadVirtualizerComponents(source) {
       text.includes("preserveScrollPositionForNextLayout") &&
       text.includes(".flushSync")
     ) {
-      const observers = findUnsafeResizeObservers(text);
+      const observers = findUnsafeResizeObservers(text, { deferredUpdater });
       if (observers.length !== 1) continue;
       candidates.push({
         name: match[1],
@@ -101,47 +113,80 @@ function findThreadVirtualizerComponents(source) {
 
 function isThreadVirtualizerLayoutAsset(source) {
   if (source.includes(THREAD_VIRTUALIZER_LAYOUT_MARKER)) return true;
-  return findThreadVirtualizerComponents(source).length === 1;
+  const deferredUpdater = source.includes(
+    LEGACY_THREAD_VIRTUALIZER_LAYOUT_MARKER,
+  );
+  return findThreadVirtualizerComponents(source, { deferredUpdater }).length === 1;
 }
 
-function hasUnsafeThreadVirtualizerResizeMeasurement(source) {
-  return findThreadVirtualizerComponents(source).length > 0;
+function hasUnsafeThreadVirtualizerResizeWork(source) {
+  if (source.includes(THREAD_VIRTUALIZER_LAYOUT_MARKER)) return false;
+  const deferredUpdater = source.includes(
+    LEGACY_THREAD_VIRTUALIZER_LAYOUT_MARKER,
+  );
+  return findThreadVirtualizerComponents(source, { deferredUpdater }).length > 0;
 }
 
 function applyLinuxThreadVirtualizerLayoutStabilityPatch(source) {
   if (source.includes(THREAD_VIRTUALIZER_LAYOUT_MARKER)) return source;
-  const candidates = findThreadVirtualizerComponents(source);
+  const deferredUpdater = source.includes(
+    LEGACY_THREAD_VIRTUALIZER_LAYOUT_MARKER,
+  );
+  if (
+    deferredUpdater &&
+    source.split(LEGACY_THREAD_VIRTUALIZER_LAYOUT_MARKER).length - 1 !== 1
+  ) {
+    throw new Error("Could not find unique previous thread virtualizer marker");
+  }
+  const candidates = findThreadVirtualizerComponents(source, { deferredUpdater });
   if (candidates.length !== 1) {
     throw new Error("Could not find unique thread virtualizer component");
   }
 
   const component = candidates[0];
   const observer = component.observer;
-  const unsafeCall = `${observer.updaterAlias}(${observer.measurementsAlias})`;
-  const callInObserver = observer.match[0].lastIndexOf(unsafeCall);
-  if (callInObserver === -1) {
-    throw new Error("Could not find thread virtualizer ResizeObserver measurement call");
+  const unsafeWork =
+    `${observer.updaterAlias}(${observer.measurementsAlias}` +
+    `${deferredUpdater ? ",!1" : ""}),` +
+    `${observer.match[3]}&&${observer.match[6]}()`;
+  const workInObserver = observer.match[0].lastIndexOf(unsafeWork);
+  if (workInObserver === -1) {
+    throw new Error("Could not find thread virtualizer ResizeObserver work");
   }
-  const callStart = observer.match.index + callInObserver;
+  const workStart = observer.match.index + workInObserver;
+  const deferredWork =
+    `window.requestAnimationFrame(()=>{${observer.updaterAlias}(` +
+    `${observer.measurementsAlias}),${observer.match[3]}&&${observer.match[6]}()})`;
   const patchedComponent =
-    component.text.slice(0, callStart) +
-    `${observer.updaterAlias}(${observer.measurementsAlias},!1)` +
-    component.text.slice(callStart + unsafeCall.length);
+    component.text.slice(0, workStart) +
+    deferredWork +
+    component.text.slice(workStart + unsafeWork.length);
   const marker = `void\`${THREAD_VIRTUALIZER_LAYOUT_MARKER}\`;`;
-  const patched =
+  let patched =
     source.slice(0, component.start) +
-    marker +
     patchedComponent +
     source.slice(component.end);
-  if (hasUnsafeThreadVirtualizerResizeMeasurement(patched)) {
-    throw new Error("Thread virtualizer still flushes ResizeObserver measurements synchronously");
+  if (deferredUpdater) {
+    patched = patched.replace(
+      LEGACY_THREAD_VIRTUALIZER_LAYOUT_MARKER,
+      THREAD_VIRTUALIZER_LAYOUT_MARKER,
+    );
+  } else {
+    patched =
+      patched.slice(0, component.start) +
+      marker +
+      patched.slice(component.start);
+  }
+  if (hasUnsafeThreadVirtualizerResizeWork(patched)) {
+    throw new Error("Thread virtualizer still performs resize work synchronously");
   }
   return patched;
 }
 
 module.exports = {
+  LEGACY_THREAD_VIRTUALIZER_LAYOUT_MARKER,
   THREAD_VIRTUALIZER_LAYOUT_MARKER,
   applyLinuxThreadVirtualizerLayoutStabilityPatch,
-  hasUnsafeThreadVirtualizerResizeMeasurement,
+  hasUnsafeThreadVirtualizerResizeWork,
   isThreadVirtualizerLayoutAsset,
 };

@@ -38,11 +38,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Large agent-activity disclosures now mount and unmount discretely instead of
   animating their height between `0` and `auto`. This removes the repeated
   layout churn caused by expanding a large visible activity group.
-- Thread-history virtualization no longer performs a synchronous React commit
-  from its `ResizeObserver` callback. Height measurements are preserved but
-  applied through the normal React update path, preventing reentrant DOM-tree
-  mutation during Blink layout that could terminate the renderer with
-  `SIGTRAP` while streamed conversation entries were updating.
+- Thread-history virtualization now defers layout-affecting resize work to the
+  next animation frame. Resize entries are still collected immediately, while
+  the measured-height React commit remains ordered before latest-turn geometry
+  reads. This prevents reentrant Blink layout from the `ResizeObserver`
+  callback that could terminate the renderer with `SIGTRAP` while conversation
+  entries were updating.
 - Nix packages no longer record an inherited parent-flake `rev` or `dirtyRev`
   as the codex-desktop-linux source commit when built from a nested relative
   path input. Vendored path snapshots now leave embedded Git provenance unknown

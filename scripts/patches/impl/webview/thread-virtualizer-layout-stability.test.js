@@ -15,9 +15,10 @@ const layoutStabilityDescriptors = require(
   "../../core/all-linux/webview/thread-virtualizer-layout-stability/patch.js"
 );
 const {
+  LEGACY_THREAD_VIRTUALIZER_LAYOUT_MARKER,
   THREAD_VIRTUALIZER_LAYOUT_MARKER,
   applyLinuxThreadVirtualizerLayoutStabilityPatch,
-  hasUnsafeThreadVirtualizerResizeMeasurement,
+  hasUnsafeThreadVirtualizerResizeWork,
   isThreadVirtualizerLayoutAsset,
 } = require("./thread-virtualizer-layout-stability.js");
 
@@ -30,17 +31,121 @@ function fixture() {
   ].join("");
 }
 
-test("thread virtualizer does not flush React updates inside ResizeObserver", () => {
+test("thread virtualizer defers layout-affecting work outside ResizeObserver", () => {
   const source = fixture();
   assert.equal(isThreadVirtualizerLayoutAsset(source), true);
-  assert.equal(hasUnsafeThreadVirtualizerResizeMeasurement(source), true);
+  assert.equal(hasUnsafeThreadVirtualizerResizeWork(source), true);
 
   const patched = applyLinuxThreadVirtualizerLayoutStabilityPatch(source);
   assert.equal(applyLinuxThreadVirtualizerLayoutStabilityPatch(patched), patched);
-  assert.equal(hasUnsafeThreadVirtualizerResizeMeasurement(patched), false);
+  assert.equal(hasUnsafeThreadVirtualizerResizeWork(patched), false);
   assert.equal(patched.split(THREAD_VIRTUALIZER_LAYOUT_MARKER).length - 1, 1);
-  assert.match(patched, /q\(t,!1\),n&&ae\(\)/u);
-  assert.doesNotMatch(patched, /q\(t\),n&&ae\(\)/u);
+  assert.match(
+    patched,
+    /window\.requestAnimationFrame\(\(\)=>\{q\(t\),n&&ae\(\)\}\)/u,
+  );
+  assert.doesNotMatch(
+    patched,
+    /new ResizeObserver\([^;]+\}q\(t\),n&&ae\(\)\}\)/u,
+  );
+  assert.doesNotMatch(patched, /q\(t,!1\),n&&ae\(\)/u);
+});
+
+test("deferred follow work observes the committed turn measurement", () => {
+  const patched = applyLinuxThreadVirtualizerLayoutStabilityPatch(fixture());
+  const deferredBlock = patched.match(
+    /window\.requestAnimationFrame\(\(\)=>\{q\(t(?:,!1)?\),n&&ae\(\)\}\)/u,
+  )?.[0];
+  assert.ok(deferredBlock);
+
+  const events = [];
+  let frameCallback = null;
+  let measurementCommitted = false;
+  const execute = new Function("window", "q", "t", "n", "ae", deferredBlock);
+  execute(
+    {
+      requestAnimationFrame(callback) {
+        frameCallback = callback;
+      },
+    },
+    (_measurements, synchronous = true) => {
+      if (synchronous) {
+        measurementCommitted = true;
+        events.push("commit");
+      } else {
+        events.push("queued");
+      }
+    },
+    new Map(),
+    true,
+    () => events.push(measurementCommitted ? "follow:committed" : "follow:stale"),
+  );
+
+  assert.deepEqual(events, []);
+  assert.ok(frameCallback);
+  frameCallback();
+  assert.deepEqual(events, ["commit", "follow:committed"]);
+});
+
+test("thread virtualizer upgrades the previous complete patch output", () => {
+  const previous =
+    `void\`${LEGACY_THREAD_VIRTUALIZER_LAYOUT_MARKER}\`;` +
+    fixture().replace("q(t),n&&ae()", "q(t,!1),n&&ae()");
+
+  assert.equal(isThreadVirtualizerLayoutAsset(previous), true);
+  assert.equal(hasUnsafeThreadVirtualizerResizeWork(previous), true);
+
+  const patched = applyLinuxThreadVirtualizerLayoutStabilityPatch(previous);
+  assert.equal(applyLinuxThreadVirtualizerLayoutStabilityPatch(patched), patched);
+  assert.equal(patched.includes(LEGACY_THREAD_VIRTUALIZER_LAYOUT_MARKER), false);
+  assert.equal(patched.split(THREAD_VIRTUALIZER_LAYOUT_MARKER).length - 1, 1);
+  assert.match(
+    patched,
+    /window\.requestAnimationFrame\(\(\)=>\{q\(t\),n&&ae\(\)\}\)/u,
+  );
+});
+
+test("thread virtualizer descriptor upgrades the previous patch atomically", () => {
+  const extractedDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-thread-upgrade-"));
+  try {
+    const assetsDir = path.join(extractedDir, "webview", "assets");
+    const assetPath = path.join(assetsDir, "conversation-source-previous.js");
+    fs.mkdirSync(assetsDir, { recursive: true });
+    fs.writeFileSync(
+      assetPath,
+      `void\`${LEGACY_THREAD_VIRTUALIZER_LAYOUT_MARKER}\`;` +
+        fixture().replace("q(t),n&&ae()", "q(t,!1),n&&ae()"),
+    );
+
+    const firstReport = createPatchReport();
+    applyWebviewAssetPatchDescriptors(
+      extractedDir,
+      normalizePatchDescriptors(layoutStabilityDescriptors),
+      {},
+      firstReport,
+    );
+
+    const upgraded = fs.readFileSync(assetPath, "utf8");
+    assert.equal(firstReport.patches[0]?.status, "applied");
+    assert.equal(upgraded.includes(LEGACY_THREAD_VIRTUALIZER_LAYOUT_MARKER), false);
+    assert.equal(upgraded.split(THREAD_VIRTUALIZER_LAYOUT_MARKER).length - 1, 1);
+    assert.match(
+      upgraded,
+      /window\.requestAnimationFrame\(\(\)=>\{q\(t\),n&&ae\(\)\}\)/u,
+    );
+
+    const secondReport = createPatchReport();
+    applyWebviewAssetPatchDescriptors(
+      extractedDir,
+      normalizePatchDescriptors(layoutStabilityDescriptors),
+      {},
+      secondReport,
+    );
+    assert.equal(secondReport.patches[0]?.status, "already-applied");
+    assert.equal(fs.readFileSync(assetPath, "utf8"), upgraded);
+  } finally {
+    fs.rmSync(extractedDir, { force: true, recursive: true });
+  }
 });
 
 test("thread virtualizer layout patch rejects an uncorrelated observer", () => {
@@ -133,14 +238,14 @@ test("thread virtualizer layout descriptor selects one semantic asset", () => {
 });
 
 test(
-  "current upstream thread virtualizer avoids synchronous observer measurement",
+  "current upstream thread virtualizer avoids synchronous observer work",
   { skip: process.env.CODEX_WEBVIEW_ASSET == null },
   () => {
     const source = fs.readFileSync(process.env.CODEX_WEBVIEW_ASSET, "utf8");
     assert.equal(isThreadVirtualizerLayoutAsset(source), true);
-    assert.equal(hasUnsafeThreadVirtualizerResizeMeasurement(source), true);
+    assert.equal(hasUnsafeThreadVirtualizerResizeWork(source), true);
     const patched = applyLinuxThreadVirtualizerLayoutStabilityPatch(source);
-    assert.equal(hasUnsafeThreadVirtualizerResizeMeasurement(patched), false);
+    assert.equal(hasUnsafeThreadVirtualizerResizeWork(patched), false);
     assert.match(patched, new RegExp(THREAD_VIRTUALIZER_LAYOUT_MARKER, "u"));
   },
 );
