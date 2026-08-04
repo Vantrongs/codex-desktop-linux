@@ -36,6 +36,27 @@ async function codexLinuxRetainCrashMinidump(sourceDumpPath) {
       return null;
     }
 
+    const ensureExistingFileWithoutSymlinks = async (filePath) => {
+      const absolutePath = path.resolve(filePath);
+      const rootPath = path.parse(absolutePath).root;
+      const components = absolutePath.slice(rootPath.length).split(path.sep).filter(Boolean);
+      let currentPath = rootPath;
+      for (let index = 0; index < components.length; index += 1) {
+        currentPath = path.join(currentPath, components[index]);
+        const componentStats = await fs.promises.lstat(currentPath);
+        const isLastComponent = index === components.length - 1;
+        if (
+          componentStats.isSymbolicLink() ||
+          (isLastComponent ? !componentStats.isFile() : !componentStats.isDirectory())
+        ) {
+          throw Object.assign(new Error("Unsafe renderer minidump source path"), {
+            code: "EUNSAFE",
+          });
+        }
+      }
+      return absolutePath;
+    };
+
     const stateRoot = process.env.XDG_STATE_HOME ||
       (process.env.HOME ? path.join(process.env.HOME, ".local", "state") : null);
     if (stateRoot == null) {
@@ -85,10 +106,11 @@ async function codexLinuxRetainCrashMinidump(sourceDumpPath) {
     await fs.promises.chmod(appStateDirectory, 0o700);
     await fs.promises.chmod(retainedDirectory, 0o700);
 
+    const absoluteSourceDumpPath = await ensureExistingFileWithoutSymlinks(sourceDumpPath);
     const sourceFlags = fs.constants.O_RDONLY |
       fs.constants.O_NOFOLLOW |
       (fs.constants.O_CLOEXEC || 0);
-    sourceHandle = await fs.promises.open(sourceDumpPath, sourceFlags);
+    sourceHandle = await fs.promises.open(absoluteSourceDumpPath, sourceFlags);
     const sourceStats = await sourceHandle.stat();
     if (
       !sourceStats.isFile() ||
@@ -225,34 +247,93 @@ function currentSentryMinidumpContract(source) {
     );
 }
 
+function readRegularPatchAsset(filePath) {
+  let fileDescriptor = null;
+  try {
+    fileDescriptor = fs.openSync(
+      filePath,
+      fs.constants.O_RDONLY |
+        fs.constants.O_NOFOLLOW |
+        (fs.constants.O_CLOEXEC || 0),
+    );
+    const fileStats = fs.fstatSync(fileDescriptor);
+    if (!fileStats.isFile() || fileStats.nlink !== 1) return null;
+    return fs.readFileSync(fileDescriptor, "utf8");
+  } catch (error) {
+    if (["ELOOP", "ENOENT", "ENOTDIR"].includes(error?.code)) return null;
+    throw error;
+  } finally {
+    if (fileDescriptor != null) fs.closeSync(fileDescriptor);
+  }
+}
+
+function writeRegularPatchAsset(filePath, source) {
+  const fileDescriptor = fs.openSync(
+    filePath,
+    fs.constants.O_RDWR |
+      fs.constants.O_NOFOLLOW |
+      (fs.constants.O_CLOEXEC || 0),
+  );
+  try {
+    const fileStats = fs.fstatSync(fileDescriptor);
+    if (!fileStats.isFile() || fileStats.nlink !== 1) {
+      throw Object.assign(new Error("Unsafe renderer minidump patch asset"), {
+        code: "EUNSAFE",
+      });
+    }
+    fs.ftruncateSync(fileDescriptor, 0);
+    fs.writeFileSync(fileDescriptor, source, "utf8");
+    fs.fsyncSync(fileDescriptor);
+  } finally {
+    fs.closeSync(fileDescriptor);
+  }
+}
+
+function safeExtractedAppBuildDirectory(extractedDir) {
+  let currentPath = path.resolve(extractedDir);
+  for (const component of [null, ".vite", "build"]) {
+    if (component != null) currentPath = path.join(currentPath, component);
+    try {
+      const componentStats = fs.lstatSync(currentPath);
+      if (!componentStats.isDirectory() || componentStats.isSymbolicLink()) return null;
+    } catch (error) {
+      if (["ENOENT", "ENOTDIR"].includes(error?.code)) return null;
+      throw error;
+    }
+  }
+  return currentPath;
+}
+
 function applyLinuxRendererMinidumpRetentionExtractedAppPatch(extractedDir) {
-  const buildDirectory = path.join(extractedDir, ".vite", "build");
-  if (!fs.existsSync(buildDirectory)) {
-    const reason = `missing build directory ${buildDirectory}`;
+  const expectedBuildDirectory = path.join(extractedDir, ".vite", "build");
+  const buildDirectory = safeExtractedAppBuildDirectory(extractedDir);
+  if (buildDirectory == null) {
+    const reason = `missing or unsafe build directory ${expectedBuildDirectory}`;
     console.warn(`WARN: Could not find Sentry minidump chunk - ${reason}`);
     return { matched: 0, changed: 0, verified: false, reason };
   }
 
   const candidates = fs
-    .readdirSync(buildDirectory)
-    .filter((name) => /^window-all-closed-.*\.m?js$/u.test(name))
-    .sort()
-    .filter((name) =>
-      currentSentryMinidumpContract(
-        fs.readFileSync(path.join(buildDirectory, name), "utf8"),
-      ),
-    );
+    .readdirSync(buildDirectory, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /^window-all-closed-.*\.m?js$/u.test(entry.name))
+    .map((entry) => ({
+      name: entry.name,
+      source: readRegularPatchAsset(path.join(buildDirectory, entry.name)),
+    }))
+    .filter((candidate) =>
+      candidate.source != null && currentSentryMinidumpContract(candidate.source),
+    )
+    .sort((left, right) => left.name.localeCompare(right.name));
   if (candidates.length !== 1) {
     const reason = candidates.length === 0
       ? "no Sentry minidump chunk found"
-      : `multiple Sentry minidump chunks found: ${candidates.join(", ")}`;
+      : `multiple Sentry minidump chunks found: ${candidates.map(({ name }) => name).join(", ")}`;
     console.warn(`WARN: Could not uniquely find Sentry minidump chunk - ${reason}`);
     return { matched: candidates.length, changed: 0, verified: false, reason };
   }
 
-  const assetName = candidates[0];
+  const { name: assetName, source } = candidates[0];
   const filePath = path.join(buildDirectory, assetName);
-  const source = fs.readFileSync(filePath, "utf8");
   const patched = applyLinuxRendererMinidumpRetentionPatch(source);
   const verified = patched.split(RETENTION_MARKER).length - 1 === 2;
   if (!verified) {
@@ -260,7 +341,7 @@ function applyLinuxRendererMinidumpRetentionExtractedAppPatch(extractedDir) {
     console.warn(`WARN: ${reason} in ${assetName}`);
     return { matched: 1, changed: 0, verified: false, reason, assetName };
   }
-  if (patched !== source) fs.writeFileSync(filePath, patched, "utf8");
+  if (patched !== source) writeRegularPatchAsset(filePath, patched);
   return {
     matched: 1,
     changed: patched === source ? 0 : 1,

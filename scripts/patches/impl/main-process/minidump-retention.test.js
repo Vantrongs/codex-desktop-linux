@@ -119,16 +119,22 @@ test("renderer minidump retention rejects non-regular and oversized inputs", asy
       crashRoot,
       "20000000-0000-4000-8000-000000000000.dmp",
     );
+    const hardlinkPath = path.join(
+      crashRoot,
+      "25000000-0000-4000-8000-000000000000.dmp",
+    );
     const oversizedPath = path.join(
       crashRoot,
       "30000000-0000-4000-8000-000000000000.dmp",
     );
     fs.writeFileSync(regularPath, Buffer.alloc(16_384));
     fs.symlinkSync(regularPath, symlinkPath);
+    fs.linkSync(regularPath, hardlinkPath);
     fs.writeFileSync(oversizedPath, "");
     fs.truncateSync(oversizedPath, 16 * 1024 * 1024 + 1);
 
     assert.equal(await retain(symlinkPath), null);
+    assert.equal(await retain(hardlinkPath), null);
     assert.equal(await retain(oversizedPath), null);
     const retainedDir = path.join(
       stateRoot,
@@ -139,6 +145,42 @@ test("renderer minidump retention rejects non-regular and oversized inputs", asy
   } finally {
     fs.rmSync(stateRoot, { force: true, recursive: true });
     fs.rmSync(crashRoot, { force: true, recursive: true });
+  }
+});
+
+test("renderer minidump retention rejects a symlinked source parent", async () => {
+  const stateRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-minidump-state-"));
+  const crashRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-minidump-source-"));
+  const linkedRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-minidump-link-"));
+  try {
+    const sourceName = "35000000-0000-4000-8000-000000000000.dmp";
+    const sourcePath = path.join(crashRoot, sourceName);
+    const linkedParent = path.join(linkedRoot, "crashes");
+    fs.writeFileSync(sourcePath, Buffer.alloc(16_384));
+    fs.symlinkSync(crashRoot, linkedParent);
+    const retain = evaluateRetentionHelper(
+      applyLinuxRendererMinidumpRetentionPatch(sentryMinidumpFixture()),
+      {
+        env: {
+          CODEX_LINUX_APP_ID: "codex-desktop-test",
+          XDG_STATE_HOME: stateRoot,
+        },
+        pid: 4242,
+        platform: "linux",
+      },
+    );
+
+    assert.equal(await retain(path.join(linkedParent, sourceName)), null);
+    const retainedDir = path.join(
+      stateRoot,
+      "codex-desktop-test",
+      "crash-minidumps",
+    );
+    assert.deepEqual(fs.readdirSync(retainedDir), []);
+  } finally {
+    fs.rmSync(stateRoot, { force: true, recursive: true });
+    fs.rmSync(crashRoot, { force: true, recursive: true });
+    fs.rmSync(linkedRoot, { force: true, recursive: true });
   }
 });
 
@@ -285,6 +327,53 @@ test("renderer minidump retention descriptor patches the unique Sentry chunk", (
     assert.equal(fs.readFileSync(chunkPath, "utf8"), patched);
   } finally {
     fs.rmSync(extractedDir, { force: true, recursive: true });
+  }
+});
+
+test("renderer minidump retention descriptor rejects a symlinked patch asset", () => {
+  const extractedDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-minidump-bundle-"));
+  const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-minidump-outside-"));
+  try {
+    const buildDir = path.join(extractedDir, ".vite", "build");
+    const outsidePath = path.join(outsideDir, "window-all-closed-outside.js");
+    const original = sentryMinidumpFixture();
+    fs.mkdirSync(buildDir, { recursive: true });
+    fs.writeFileSync(outsidePath, original);
+    fs.symlinkSync(
+      outsidePath,
+      path.join(buildDir, "window-all-closed-symlink.js"),
+    );
+    fs.linkSync(
+      outsidePath,
+      path.join(buildDir, "window-all-closed-hardlink.js"),
+    );
+
+    const report = applyMinidumpRetentionDescriptor(extractedDir);
+    assert.equal(report.patches[0]?.status, "failed-required");
+    assert.equal(fs.readFileSync(outsidePath, "utf8"), original);
+  } finally {
+    fs.rmSync(extractedDir, { force: true, recursive: true });
+    fs.rmSync(outsideDir, { force: true, recursive: true });
+  }
+});
+
+test("renderer minidump retention descriptor rejects a symlinked build directory", () => {
+  const extractedDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-minidump-bundle-"));
+  const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-minidump-outside-"));
+  try {
+    const viteDir = path.join(extractedDir, ".vite");
+    const outsidePath = path.join(outsideDir, "window-all-closed-outside.js");
+    const original = sentryMinidumpFixture();
+    fs.mkdirSync(viteDir);
+    fs.writeFileSync(outsidePath, original);
+    fs.symlinkSync(outsideDir, path.join(viteDir, "build"));
+
+    const report = applyMinidumpRetentionDescriptor(extractedDir);
+    assert.equal(report.patches[0]?.status, "failed-required");
+    assert.equal(fs.readFileSync(outsidePath, "utf8"), original);
+  } finally {
+    fs.rmSync(extractedDir, { force: true, recursive: true });
+    fs.rmSync(outsideDir, { force: true, recursive: true });
   }
 });
 
