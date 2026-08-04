@@ -22,6 +22,7 @@
 | Transparent or dark left sidebar | Check whether the Linux opaque-window patch was applied, then rebuild with a current checkout |
 | Sandbox errors | The launcher already sets `--no-sandbox` |
 | Renderer crashes in containers with a tiny `/dev/shm` | The launcher keeps `--disable-dev-shm-usage` automatically when `/dev/shm` is missing or below 1 GiB; force it with `CODEX_ELECTRON_DISABLE_DEV_SHM_USAGE=1` |
+| The window reloads after a renderer crash | Correlate the last entry in `$XDG_STATE_HOME/<app-id>/renderer-crashes.jsonl` with the newest private minidump in `$XDG_STATE_HOME/<app-id>/crash-minidumps/` (normally both are below `~/.local/state/codex-desktop/`). The app keeps at most three dumps, no more than 16 MiB each and 32 MiB in total. Do not enable full system core memory: the launcher intentionally keeps it disabled to avoid multi-gigabyte writes. Minidumps can contain process memory, so share one only after reviewing the recipient and scope. |
 | Screen reader does not read the app UI | Renderer accessibility is forced automatically when Orca, brltty, the GNOME screen-reader setting, AT-SPI accessibility state (`org.a11y.Status IsEnabled` or `toolkit-accessibility`, e.g. after `codex-computer-use-linux setup`), or accessibility env markers are detected; force it with `CODEX_FORCE_RENDERER_ACCESSIBILITY=1` |
 | Stale install / cached DMG | `make build-app-fresh` refreshes the cached DMG and builds a clean candidate; the working app remains until acceptance succeeds |
 | `Candidate was not installed (verdict: rejected)` | Open `dist-next/rebuild/upstream-dmg-decision.json`. If the blocker is `enabled-feature-drift`, disable the named Linux Feature and retry; otherwise fix required current-DMG drift before retrying |
@@ -246,6 +247,10 @@ export XDG_CACHE_HOME=~/tmp/codex-cache
 
 ```bash
 sed -n '1,160p' ~/.cache/codex-desktop/launcher.log
+state_root="${XDG_STATE_HOME:-$HOME/.local/state}"
+app_id="${CODEX_LINUX_APP_ID:-${CODEX_APP_ID:-codex-desktop}}"
+tail -n 8 "$state_root/$app_id/renderer-crashes.jsonl"
+find "$state_root/$app_id/crash-minidumps" -maxdepth 1 -type f -printf '%TY-%Tm-%Td %TH:%TM:%TS %s %p\n' 2>/dev/null | sort
 sed -n '1,160p' ~/.local/state/codex-update-manager/service.log
 codex-update-manager status --json
 systemctl --user status codex-update-manager.service

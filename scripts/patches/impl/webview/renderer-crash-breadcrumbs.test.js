@@ -128,12 +128,20 @@ test("renderer crash breadcrumbs preserve ResizeObserver behavior and identify t
   for (const listener of eventListeners.get("error")) listener(resizeError);
 
   assert.equal(forwardedErrors.length, 1);
-  assert.equal(consoleMessages.length, 1);
-  assert.match(consoleMessages[0], /^\[codex-linux-renderer-breadcrumb\]/u);
-  assert.doesNotMatch(consoleMessages[0], /hidden|fragment|assets\/app-main|QUERY_LEAK/u);
-  assert.ok(consoleMessages[0].length < 32768);
-  const breadcrumb = JSON.parse(
+  assert.equal(consoleMessages.length, 5);
+  for (const message of consoleMessages) {
+    assert.match(message, /^\[codex-linux-renderer-breadcrumb\]/u);
+    assert.doesNotMatch(message, /hidden|fragment|assets\/app-main|QUERY_LEAK/u);
+    assert.ok(message.length < 32768);
+  }
+  const callbackBreadcrumb = JSON.parse(
     consoleMessages[0].slice("[codex-linux-renderer-breadcrumb]".length),
+  );
+  assert.equal(callbackBreadcrumb.kind, "resize-observer-callback");
+  assert.equal(callbackBreadcrumb.observers.length, 1);
+  assert.equal(callbackBreadcrumb.observers[0].id, 1);
+  const breadcrumb = JSON.parse(
+    consoleMessages[4].slice("[codex-linux-renderer-breadcrumb]".length),
   );
   assert.equal(breadcrumb.kind, "resize-observer-loop");
   assert.equal(breadcrumb.windowType, "electron");
@@ -153,7 +161,25 @@ test("renderer crash breadcrumbs preserve ResizeObserver behavior and identify t
   changingObserver.trigger([{ target }]);
   for (const listener of eventListeners.get("error")) listener(resizeError);
   assert.equal(forwardedErrors.length, 2);
-  assert.equal(consoleMessages.length, 1, "duplicate diagnostics are throttled");
+  assert.equal(
+    consoleMessages.length,
+    6,
+    "repeated callbacks and duplicate loop diagnostics are throttled",
+  );
+
+  const bulkObservers = Array.from(
+    { length: 257 },
+    () => new window.ResizeObserver(() => {}),
+  );
+  for (const bulkObserver of bulkObservers) bulkObserver.trigger([{ target }]);
+  const afterFirstBulkCycle = consoleMessages.length;
+  assert.equal(afterFirstBulkCycle, 263);
+  for (const bulkObserver of bulkObservers) bulkObserver.trigger([{ target }]);
+  assert.equal(
+    consoleMessages.length,
+    afterFirstBulkCycle,
+    "observer bookkeeping does not forget active callbacks at a fixed capacity",
+  );
 });
 
 test("renderer crash breadcrumbs fail closed when the upstream handler drifts", () => {

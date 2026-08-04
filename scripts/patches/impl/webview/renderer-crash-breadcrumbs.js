@@ -18,7 +18,8 @@ function rendererCrashBreadcrumbRuntime() {
 
       let nextObserverId = 0;
       const recentCallbacks = [];
-      let lastReportAt = Number.NEGATIVE_INFINITY;
+      let lastCallbackReportAt = Number.NEGATIVE_INFINITY;
+      let lastLoopReportAt = Number.NEGATIVE_INFINITY;
       const monotonicNow = () => {
         try {
           return typeof performance === "object" && typeof performance.now === "function"
@@ -79,6 +80,48 @@ function rendererCrashBreadcrumbRuntime() {
           return { createdAt: null, stack: null };
         }
       };
+      const currentRouteContext = () => {
+        const route =
+          typeof window.location?.pathname === "string"
+            ? window.location.pathname.slice(0, 1024)
+            : null;
+        const routeIds =
+          typeof route === "string"
+            ? [
+                ...route.matchAll(
+                  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/giu,
+                ),
+              ]
+                .slice(0, 8)
+                .map((match) => match[0])
+            : [];
+        return {
+          route: null,
+          routeIds,
+          windowType:
+            typeof document?.documentElement?.dataset?.codexWindowType === "string"
+              ? document.documentElement.dataset.codexWindowType.slice(0, 64)
+              : null,
+        };
+      };
+      const emitBreadcrumb = (kind, observers) => {
+        try {
+          console.info(
+            `[codex-linux-renderer-breadcrumb]${JSON.stringify({
+              v: 1,
+              kind,
+              timestamp: new Date().toISOString(),
+              ...currentRouteContext(),
+              observers: observers.map((observer) => ({
+                id: observer.id,
+                createdAt: observer.createdAt,
+                stack: safeStack(observer.stack),
+                targets: observer.targets,
+              })),
+            })}`,
+          );
+        } catch {}
+      };
 
       let ResizeObserverProxy;
       ResizeObserverProxy = new Proxy(NativeResizeObserver, {
@@ -89,6 +132,7 @@ function rendererCrashBreadcrumbRuntime() {
           if (typeof callback !== "function") {
             return Reflect.construct(Target, argumentsList, newTarget);
           }
+          let callbackReported = false;
           const wrappedCallback = function (entries, observer) {
             try {
               const targets = [];
@@ -105,6 +149,16 @@ function rendererCrashBreadcrumbRuntime() {
               });
               if (recentCallbacks.length > 16) {
                 recentCallbacks.splice(0, recentCallbacks.length - 16);
+              }
+              const currentCallback = recentCallbacks[recentCallbacks.length - 1];
+              const now = currentCallback.monotonicAt;
+              if (
+                !callbackReported ||
+                now - lastCallbackReportAt >= 5000
+              ) {
+                callbackReported = true;
+                lastCallbackReportAt = now;
+                emitBreadcrumb("resize-observer-callback", [currentCallback]);
               }
             } catch {}
             return Reflect.apply(callback, this, [entries, observer]);
@@ -135,7 +189,7 @@ function rendererCrashBreadcrumbRuntime() {
           }
 
           const now = monotonicNow();
-          if (now - lastReportAt < 5000) return;
+          if (now - lastLoopReportAt < 5000) return;
           const observers = [];
           for (const callback of recentCallbacks.slice().reverse()) {
             if (callback.monotonicAt != null && now - callback.monotonicAt > 250) {
@@ -146,41 +200,8 @@ function rendererCrashBreadcrumbRuntime() {
             }
             if (observers.length >= 4) break;
           }
-          const route =
-            typeof window.location?.pathname === "string"
-              ? window.location.pathname.slice(0, 1024)
-              : null;
-          const routeIds =
-            typeof route === "string"
-              ? [
-                  ...route.matchAll(
-                    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/giu,
-                  ),
-                ]
-                  .slice(0, 8)
-                  .map((match) => match[0])
-              : [];
-          const breadcrumb = {
-            v: 1,
-            kind: "resize-observer-loop",
-            timestamp: new Date().toISOString(),
-            route: null,
-            routeIds,
-            windowType:
-              typeof document?.documentElement?.dataset?.codexWindowType === "string"
-                ? document.documentElement.dataset.codexWindowType.slice(0, 64)
-                : null,
-            observers: observers.map((observer) => ({
-              id: observer.id,
-              createdAt: observer.createdAt,
-              stack: safeStack(observer.stack),
-              targets: observer.targets,
-            })),
-          };
-          lastReportAt = now;
-          console.info(
-            `[codex-linux-renderer-breadcrumb]${JSON.stringify(breadcrumb)}`,
-          );
+          lastLoopReportAt = now;
+          emitBreadcrumb("resize-observer-loop", observers);
         } catch {}
       });
     } catch {}

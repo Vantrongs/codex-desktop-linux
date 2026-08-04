@@ -138,6 +138,21 @@ test("renderer crash diagnostics writes only to a private regular JSONL file", (
     })}`;
     assert.ok(maximumProducerMessage.length < 32768);
     webContentsListeners.get("console-message")({}, { message: maximumProducerMessage });
+    webContentsListeners.get("console-message")({}, {
+      message: `[codex-linux-renderer-breadcrumb]${JSON.stringify({
+        v: 1,
+        kind: "resize-observer-callback",
+        timestamp: "2026-07-29T10:00:01.000Z",
+        routeIds: ["019fad43-fe09-73d0-9925-40fdd74c37bf"],
+        windowType: "electron",
+        observers: [{
+          id: 12,
+          createdAt: "at observer (<url>:10:20)",
+          stack: "Error\n at observer (<url>:10:20)",
+          targets: ["div[id][classes=2]"],
+        }],
+      })}`,
+    });
     delete process.env.CODEX_LINUX_WEBVIEW_PORT;
     process.env.CODEX_WEBVIEW_PORT = "5175";
     webContentsListeners.get("console-message")({}, {
@@ -180,7 +195,7 @@ test("renderer crash diagnostics writes only to a private regular JSONL file", (
     assert.equal(records[0].appVersion, "26.test");
     assert.equal(records[0].appMetrics[0].pid, 42);
     assert.equal(records[0].renderer.url, "http://localhost");
-    assert.equal(records[0].renderer.breadcrumbs.length, 2);
+    assert.equal(records[0].renderer.breadcrumbs.length, 3);
     assert.equal(records[0].renderer.breadcrumbs[0].observers[0].id, 3);
     assert.equal(records[0].renderer.breadcrumbs[0].observers.length, 4);
     assert.equal(records[0].renderer.breadcrumbs[0].observers[0].stack.length, 2048);
@@ -194,7 +209,12 @@ test("renderer crash diagnostics writes only to a private regular JSONL file", (
     assert.deepEqual(records[0].renderer.breadcrumbs[0].routeIds, [
       "019fad43-fe09-73d0-9925-40fdd74c37bf",
     ]);
-    assert.deepEqual(records[0].renderer.breadcrumbs[1].routeIds, [
+    assert.equal(
+      records[0].renderer.breadcrumbs[1].kind,
+      "resize-observer-callback",
+    );
+    assert.equal(records[0].renderer.breadcrumbs[1].observers[0].id, 12);
+    assert.deepEqual(records[0].renderer.breadcrumbs[2].routeIds, [
       "019fad43-fe09-73d0-9925-40fdd74c37c1",
     ]);
     assert.doesNotMatch(

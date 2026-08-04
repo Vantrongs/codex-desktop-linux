@@ -41,6 +41,13 @@ that agents need without keeping them in the main quick-start.
   Launcher log for the default app identity.
 - `~/.local/state/codex-desktop/app.pid` and `webview.pid`
   Launcher liveness files.
+- `$XDG_STATE_HOME/<app-id>/renderer-crashes.jsonl`
+  Private, bounded renderer-exit context log written only after an unexpected
+  renderer exit.
+- `$XDG_STATE_HOME/<app-id>/crash-minidumps/`
+  Private Crashpad copies retained before Sentry cleanup. Each dump is limited
+  to 16 MiB; pruning keeps at most three files and 32 MiB total. Dumps may
+  contain process memory and should not be published without review.
 - `$XDG_RUNTIME_DIR/codex-desktop/launch-action.sock`
   Warm-start handoff socket.
 

@@ -35,6 +35,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- Linux crash diagnostics now retain a private, bounded copy of Electron's
+  Crashpad minidump before Sentry removes its working file. At most three dumps
+  and 32 MiB are kept under the app state directory, while the launcher keeps
+  full system core memory disabled. Renderer breadcrumbs also record the first
+  and periodically refreshed `ResizeObserver` callback context so a later
+  `SIGTRAP` can be correlated without continuously writing layout activity to
+  disk.
 - Large agent-activity disclosures now mount and unmount discretely instead of
   animating their height between `0` and `auto`. This removes the repeated
   layout churn caused by expanding a large visible activity group.
