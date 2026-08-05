@@ -1,0 +1,35 @@
+{
+  "electronVersion": "42.3.0",
+  "architecture": "x86_64",
+  "elfMachine": 62,
+  "gnuBuildId": "036e09a867ef3605ad50d5ec762f20f50cd5c95d",
+  "addresses": {
+    "cppgcCageBaseGlobal": "0x0c706040"
+  },
+  "targets": {
+    "layoutSelectionCommit": {
+      "rva": "0x099b3a90",
+      "signature": "554889e54157415641554154"
+    },
+    "frameSelectionGetDocument": {
+      "rva": "0x06b910e0",
+      "signature": "554889e548634704"
+    },
+    "documentCalculateStyleAndLayoutTreeUpdate": {
+      "rva": "0x0a68dc30",
+      "signature": "554889e54156534989fe"
+    },
+    "documentView": {
+      "rva": "0x0a68dab0",
+      "signature": "486387100100004885c0"
+    },
+    "localFrameViewNeedsLayout": {
+      "rva": "0x09aa6460",
+      "signature": "554889e553504889fb48637f78"
+    },
+    "localFrameViewScheduleAnimation": {
+      "rva": "0x09aa5bd0",
+      "signature": "554889e541574156415453"
+    }
+  }
+}

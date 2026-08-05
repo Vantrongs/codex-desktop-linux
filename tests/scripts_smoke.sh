@@ -5682,6 +5682,11 @@ test_launcher_template_sanity() {
     assert_contains "$REPO_DIR/launcher/start.sh.template" "codex_capture_original_ld_library_path"
     assert_contains "$REPO_DIR/flake.nix" 'export LD_LIBRARY_PATH="${electronLibPath}:${runtimeLibPath}'
     assert_not_contains "$REPO_DIR/flake.nix" '--prefix LD_LIBRARY_PATH'
+    assert_contains "$REPO_DIR/flake.nix" 'electron-layout-selection-hotpatch'
+    assert_contains "$REPO_DIR/flake.nix" '--set CODEX_ELECTRON_LD_PRELOAD'
+    assert_not_contains "$REPO_DIR/flake.nix" '--prefix LD_PRELOAD'
+    assert_contains "$REPO_DIR/launcher/start.sh.template" 'if [ -n "${CODEX_ELECTRON_LD_PRELOAD:-}" ]'
+    assert_contains "$REPO_DIR/launcher/start.sh.template" 'export LD_PRELOAD="$CODEX_ELECTRON_LD_PRELOAD${LD_PRELOAD:+:$LD_PRELOAD}"'
     assert_contains "$REPO_DIR/flake.nix" 'export CODEX_LINUX_SOURCE_REMOTE="${flakeSourceRemote}"'
     assert_contains "$REPO_DIR/install.sh" 'DEFAULT_CODEX_WEBVIEW_PORT=5175'
     assert_contains "$REPO_DIR/install.sh" "inspect_rebuild_candidate"

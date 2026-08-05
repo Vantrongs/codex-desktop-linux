@@ -24,6 +24,15 @@ package artifacts.
 The installer replaces the macOS Electron binary with a Linux build, recompiles
 native modules, and removes macOS-only pieces such as Sparkle.
 
+On Nix x86_64, the package also builds one small, version-pinned native
+`LayoutSelection::Commit()` correction. The launcher assigns its path through
+`CODEX_ELECTRON_LD_PRELOAD` only after setup work is complete; Electron and its
+renderer subprocesses inherit it. The module verifies the GNU build ID and all
+native entry-point signatures before changing process memory, and otherwise
+does nothing. Its machine contract lives in one
+`native/electron-layout-selection-hotpatch/spec.json`; no Chromium or Electron
+source tree is copied into the package.
+
 ## Patch System
 
 Core Linux compatibility patches live under `scripts/patches/core/`.

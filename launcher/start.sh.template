@@ -4537,6 +4537,16 @@ launch_electron() {
     run_feature_launcher_hooks
     build_electron_launch_args
 
+    # Nix can inject a version-pinned native Electron correction without
+    # preloading it into the launcher's setup commands. Renderer subprocesses
+    # inherit this value from the Electron browser process.
+    if [ -n "${CODEX_ELECTRON_LD_PRELOAD:-}" ]; then
+        case ":${LD_PRELOAD:-}:" in
+            *":$CODEX_ELECTRON_LD_PRELOAD:"*) ;;
+            *) export LD_PRELOAD="$CODEX_ELECTRON_LD_PRELOAD${LD_PRELOAD:+:$LD_PRELOAD}" ;;
+        esac
+    fi
+
     if [ "$WARM_START" -eq 1 ]; then
         release_launcher_lock
         echo "Electron warm-start handoff: pid=$RUNNING_APP_PID rendering_mode=$ELECTRON_RENDERING_MODE wslg_detected=$ELECTRON_WSLG_DETECTED ozone_platform=${ELECTRON_OZONE_PLATFORM:-default} ozone_hint=${ELECTRON_OZONE_HINT:-none} gpu_enabled=$ELECTRON_GPU_ENABLED gpu_disable_arg=$ELECTRON_GPU_DISABLE_SWITCH_IN_ARGS gpu_compositing_disabled=$ELECTRON_GPU_COMPOSITING_DISABLED dev_shm_usage_disabled=$ELECTRON_DEV_SHM_USAGE_DISABLED gl_switch_added=$ELECTRON_GL_SWITCH_ADDED renderer_accessibility_forced=$ELECTRON_RENDERER_ACCESSIBILITY_FORCED forced_scale=${ELECTRON_FORCED_SCALE_FACTOR:-none}"

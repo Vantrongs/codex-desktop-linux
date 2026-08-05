@@ -35,6 +35,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- Nix x86_64 packages now carry a version-pinned native correction for the
+  Chromium `LayoutSelection::Commit()` dirty-layout crash. When a drag-selection
+  reaches the compositing-inputs phase before layout is clean, the selection
+  remains pending and is committed on the next frame instead of forcing a
+  forbidden nested layout and terminating the renderer with `SIGTRAP`. The
+  runtime verifies Electron's GNU build ID and every touched native signature
+  before installing the correction.
 - Linux crash diagnostics now retain a private, bounded copy of Electron's
   Crashpad minidump before Sentry removes its working file. At most three dumps
   and 32 MiB are kept under the app state directory, while the launcher keeps

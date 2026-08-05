@@ -130,6 +130,51 @@
           hash = "sha256-ghAJ+cGDAFDYlK755hkGywpTeyAAstm77ZmF//HV4NA=";
         };
 
+        electronLayoutSelectionHotpatch =
+          if system == "x86_64-linux" then
+            pkgs.stdenv.mkDerivation {
+              pname = "codex-electron-layout-selection-hotpatch";
+              version = "${electronVersion}-chromium-8187581";
+              src = ./native/electron-layout-selection-hotpatch;
+
+              nativeBuildInputs = [
+                pkgs.gcc
+                pkgs.python3
+                pkgs.unzip
+              ];
+
+              dontConfigure = true;
+
+              buildPhase = ''
+                runHook preBuild
+
+                python3 hotpatch_spec.py header spec.json hotpatch-spec.h
+                python3 -m py_compile hotpatch_spec.py
+                mkdir -p "$TMPDIR/electron-dist"
+                unzip -q ${electronZip} electron -d "$TMPDIR/electron-dist"
+                python3 hotpatch_spec.py verify spec.json "$TMPDIR/electron-dist/electron"
+
+                gcc -std=c17 -Wall -Wextra -Werror -O2 \
+                  -fPIC -fvisibility=hidden \
+                  -I. -shared hotpatch.c \
+                  -Wl,-z,relro,-z,now \
+                  -o libcodex-blink-layout-selection-hotpatch.so
+
+                runHook postBuild
+              '';
+
+              installPhase = ''
+                runHook preInstall
+                install -Dm0755 libcodex-blink-layout-selection-hotpatch.so \
+                  "$out/lib/libcodex-blink-layout-selection-hotpatch.so"
+                install -Dm0644 spec.json \
+                  "$out/share/codex-electron-layout-selection-hotpatch/spec.json"
+                runHook postInstall
+              '';
+            }
+          else
+            null;
+
         codexMicroNodeHidArchive = pkgs.fetchurl {
           name = "node-hid-3.3.0.tgz";
           url = "https://registry.npmjs.org/node-hid/-/node-hid-3.3.0.tgz";
@@ -394,6 +439,11 @@
           xinput
           xmodmap
         ]);
+        electronLayoutSelectionHotpatchPath =
+          if electronLayoutSelectionHotpatch == null then
+            ""
+          else
+            "${electronLayoutSelectionHotpatch}/lib/libcodex-blink-layout-selection-hotpatch.so";
 
         patchNixInstalledApp = installDir: ''
           # Patch generated scripts for NixOS systems without /bin/bash.
@@ -748,6 +798,7 @@ PY
 
             makeWrapper "$out/opt/codex-desktop/start.sh" "$out/bin/codex-desktop" \
               --prefix PATH : "${payloadLauncherPath}" \
+              --set CODEX_ELECTRON_LD_PRELOAD "${electronLayoutSelectionHotpatchPath}" \
               --run 'export XDG_DATA_DIRS="''${XDG_DATA_DIRS:-${xdgDefaultDataDirs}}"' \
               --prefix XDG_DATA_DIRS : "${gsettingsSchemaDataDirs}" \
               --prefix PATH : "/run/current-system/sw/bin" \
@@ -956,6 +1007,8 @@ PY
           watchdog-linux-features = codexDesktopWatchdogFeatureCheck;
           nix-linux-features-multi-feature = codexDesktopWatchdogFeatureCheck;
           nix-plugin-skill-feature-payload = codexDesktopNixFeatureAcceptance;
+        } // pkgs.lib.optionalAttrs (electronLayoutSelectionHotpatch != null) {
+          electron-layout-selection-hotpatch = electronLayoutSelectionHotpatch;
         };
 
         apps.default = {
