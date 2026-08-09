@@ -43,6 +43,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- The Nix companion patch for `spawn_agent_v2` now uses the Codex CLI 0.147.0
+  tool registry. It retains explicit model, reasoning-effort, and service-tier
+  overrides while relying on upstream's new V2 compatibility for Luna and
+  other non-disabled agent models instead of carrying a Luna-only exception.
+- The compatible Codex CLI patch now follows the 0.147.0 host Skill service
+  into `ext/skills`. Manual-only policy overrides remain applied after later
+  session layers update only a Skill's enabled state, for both host and plugin
+  Skill inventories.
 - The 26.803 payload retargets the agent-activity and thread-virtualizer layout
   stability patches to their current chunks. The obsolete Desktop process
   registry durability patch was removed because this payload no longer ships
