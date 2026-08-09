@@ -61,6 +61,9 @@ nix build .#checks.x86_64-linux.nix-plugin-skill-feature-payload --no-link
 The feature patches are fail-soft and idempotent. Current Electron 42 builds
 split Skill trigger parsing from the trigger registration, menu filtering, and
 composer call site, so the patch handles those generated chunks independently.
+The composer matcher preserves the complete upstream Skill availability
+predicate, including any model-context arguments, and only replaces the leading
+enabled-state gate with the automatic/manual invocation policy gate.
 Within each affected asset, all required anchors must match or that asset is
 left unchanged and a warning is reported. The dedicated payload Nix check then
 requires exactly one registration marker, parser marker, composer-filter marker,

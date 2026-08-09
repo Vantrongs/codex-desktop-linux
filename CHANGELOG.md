@@ -47,6 +47,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   stability patches to their current chunks. The obsolete Desktop process
   registry durability patch was removed because this payload no longer ships
   the `chat_processes.json` registry contract.
+- The manual-only Skill composer patch now preserves the complete upstream
+  availability predicate. This supports the additional model-context arguments
+  introduced by the 26.803 payload without weakening the upstream filter.
 - Nix x86_64 packages now carry a version-pinned native correction for the
   Chromium `LayoutSelection::Commit()` dirty-layout crash. When a drag-selection
   reaches the compositing-inputs phase before layout is clean, the selection

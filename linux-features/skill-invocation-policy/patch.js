@@ -367,7 +367,7 @@ function applySkillInvocationComposerUiPatch(source) {
   }
 
   const skillFilterPattern = new RegExp(
-    `(${JS_IDENT})\\.filter\\(e=>e\\.enabled&&(${JS_IDENT})\\(e,(${JS_IDENT})\\)\\)`,
+    `(${JS_IDENT})\\.filter\\(e=>e\\.enabled&&(${JS_IDENT}\\(e(?:,${JS_IDENT})+\\))\\)`,
   );
   const skillFilterMatch = patchedBlock.match(skillFilterPattern);
   if (skillFilterMatch == null) {
@@ -377,7 +377,7 @@ function applySkillInvocationComposerUiPatch(source) {
   patchedBlock = replacePatternExactlyOnce(
     patchedBlock,
     skillFilterPattern,
-    `${skillFilterMatch[1]}.filter(e=>${COMPOSER_FILTER_NAME}(e,codexLinuxInvocationTrigger)&&${skillFilterMatch[2]}(e,${skillFilterMatch[3]}))`,
+    `${skillFilterMatch[1]}.filter(e=>${COMPOSER_FILTER_NAME}(e,codexLinuxInvocationTrigger)&&${skillFilterMatch[2]})`,
     "Skill invocation-policy filter",
   );
   if (patchedBlock == null) {

@@ -277,6 +277,20 @@ test("composer patch supports the current split trigger and Skill menu chunks", 
   assert.equal(applySkillInvocationComposerPatch(trigger), trigger);
 });
 
+test("composer patch preserves the current multi-argument Skill availability predicate", () => {
+  const source = currentComposerRegistrationUiFixture().replace(
+    "Yn(e,T)",
+    "Yn(e,T,b,j)",
+  );
+  const patched = applySkillInvocationComposerPatch(source);
+
+  assert.notEqual(patched, source);
+  assert.match(
+    patched,
+    /codexLinuxSkillMatchesInvocationTrigger\(e,codexLinuxInvocationTrigger\)&&Yn\(e,T,b,j\)/,
+  );
+});
+
 test("composer registration patches every current Skill trigger map", () => {
   const source = [
     "let f={...o?{$:`skill-mention`}:{}};",
