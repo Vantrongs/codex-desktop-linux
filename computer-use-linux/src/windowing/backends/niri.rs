@@ -1,19 +1,17 @@
+use crate::command_runner;
 use crate::terminal::enrich_terminal_windows;
 use crate::windowing::registry::BackendProbe;
 use crate::windowing::types::{WindowBounds, WindowInfo};
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::env;
-use std::fs;
-use std::os::unix::fs::FileTypeExt;
-use std::path::PathBuf;
-use std::process::Command;
+use std::process::Command as StdCommand;
+use tokio::process::Command;
 
 pub const NIRI_BACKEND: &str = "niri";
 
 pub fn probe() -> BackendProbe {
-    match niri_command().args(["msg", "-j", "windows"]).output() {
+    match niri_output(&["msg", "--json", "windows"]) {
         Ok(output) if output.status.success() => {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let ok = matches!(
@@ -27,24 +25,20 @@ pub fn probe() -> BackendProbe {
                 can_focus_apps: ok,
                 can_focus_windows: ok,
                 detail: if ok {
-                    "niri msg -j windows returned a JSON array".to_string()
+                    "niri msg --json windows returned a JSON array".to_string()
                 } else {
-                    "niri msg -j windows did not return a JSON array".to_string()
+                    "niri msg --json windows did not return a JSON array".to_string()
                 },
             }
         }
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            BackendProbe {
-                id: NIRI_BACKEND,
-                ok: false,
-                can_list_windows: false,
-                can_focus_apps: false,
-                can_focus_windows: false,
-                detail: if stderr.is_empty() { stdout } else { stderr },
-            }
-        }
+        Ok(output) => BackendProbe {
+            id: NIRI_BACKEND,
+            ok: false,
+            can_list_windows: false,
+            can_focus_apps: false,
+            can_focus_windows: false,
+            detail: command_failure_detail(&output),
+        },
         Err(error) => BackendProbe {
             id: NIRI_BACKEND,
             ok: false,
@@ -56,10 +50,10 @@ pub fn probe() -> BackendProbe {
     }
 }
 
-pub fn list_windows() -> Result<Vec<WindowInfo>> {
-    let windows_json = niri_json(&["msg", "-j", "windows"])?;
-    let workspaces_json = niri_json(&["msg", "-j", "workspaces"]).ok();
-    let outputs_json = niri_json(&["msg", "-j", "outputs"]).ok();
+pub async fn list_windows() -> Result<Vec<WindowInfo>> {
+    let windows_json = niri_json_async(&["msg", "--json", "windows"]).await?;
+    let workspaces_json = niri_json_async(&["msg", "--json", "workspaces"]).await.ok();
+    let outputs_json = niri_json_async(&["msg", "--json", "outputs"]).await.ok();
 
     let mut windows = parse_niri_windows(
         &windows_json,
@@ -70,16 +64,15 @@ pub fn list_windows() -> Result<Vec<WindowInfo>> {
     Ok(windows)
 }
 
-fn niri_json(args: &[&str]) -> Result<String> {
-    let output = niri_command()
-        .args(args)
-        .output()
+async fn niri_json_async(args: &[&str]) -> Result<String> {
+    let output = niri_output_async(args)
+        .await
         .with_context(|| format!("failed to run niri {}", args.join(" ")))?;
     if !output.status.success() {
         bail!(
             "niri {} failed: {}",
             args.join(" "),
-            String::from_utf8_lossy(&output.stderr).trim()
+            command_failure_detail(&output)
         );
     }
     String::from_utf8(output.stdout).context("niri returned non-UTF-8 JSON")
@@ -91,7 +84,7 @@ pub(crate) fn parse_niri_windows(
     outputs_json: Option<&str>,
 ) -> Result<Vec<WindowInfo>> {
     let raw_windows: Vec<NiriWindow> =
-        serde_json::from_str(json).context("failed to parse niri msg -j windows output")?;
+        serde_json::from_str(json).context("failed to parse niri msg --json windows output")?;
     let workspace_outputs = workspaces_json
         .and_then(|json| serde_json::from_str::<Vec<NiriWorkspace>>(json).ok())
         .unwrap_or_default()
@@ -109,71 +102,48 @@ pub(crate) fn parse_niri_windows(
     Ok(windows)
 }
 
-pub fn activate_window(window_id: u64) -> Result<()> {
-    let output = niri_command()
-        .args([
-            "msg",
-            "action",
-            "focus-window",
-            "--id",
-            &window_id.to_string(),
-        ])
-        .output()
-        .with_context(|| format!("failed to run niri msg action focus-window --id {window_id}"))?;
+pub async fn activate_window(window_id: u64) -> Result<()> {
+    let args = niri_focus_args(window_id);
+    let output = niri_output_async(&args.iter().map(String::as_str).collect::<Vec<_>>())
+        .await
+        .with_context(|| format!("failed to focus Niri window {window_id}"))?;
     if output.status.success() {
         Ok(())
     } else {
         bail!(
             "niri msg action focus-window --id {window_id} failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
+            command_failure_detail(&output)
         );
     }
 }
 
-fn niri_command() -> Command {
+pub(crate) fn niri_focus_args(window_id: u64) -> [String; 5] {
+    [
+        "msg".to_string(),
+        "action".to_string(),
+        "focus-window".to_string(),
+        "--id".to_string(),
+        window_id.to_string(),
+    ]
+}
+
+fn niri_output(args: &[&str]) -> std::io::Result<std::process::Output> {
+    StdCommand::new("niri").args(args).output()
+}
+
+async fn niri_output_async(args: &[&str]) -> Result<std::process::Output> {
     let mut command = Command::new("niri");
-    if env::var_os("NIRI_SOCKET").is_none() {
-        if let Some(socket) = infer_niri_socket() {
-            command.env("NIRI_SOCKET", socket);
-        }
+    command.args(args);
+    command_runner::output(command, "run niri IPC command").await
+}
+
+fn command_failure_detail(output: &std::process::Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if stderr.is_empty() {
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    } else {
+        stderr
     }
-    command
-}
-
-fn infer_niri_socket() -> Option<PathBuf> {
-    let runtime = xdg_runtime_dir()?;
-    let mut sockets = fs::read_dir(runtime)
-        .ok()?
-        .filter_map(|entry| entry.ok())
-        .filter_map(|entry| {
-            let file_name = entry.file_name();
-            let file_name = file_name.to_str()?;
-            if !file_name.starts_with("niri.") || !file_name.ends_with(".sock") {
-                return None;
-            }
-            let metadata = entry.metadata().ok()?;
-            if !metadata.file_type().is_socket() {
-                return None;
-            }
-            let modified = metadata.modified().ok();
-            Some((modified, entry.path()))
-        })
-        .collect::<Vec<_>>();
-    sockets.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));
-    sockets.into_iter().map(|(_, path)| path).next()
-}
-
-fn xdg_runtime_dir() -> Option<PathBuf> {
-    env::var_os("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .or_else(|| {
-            fs::metadata("/proc/self").ok().map(|metadata| {
-                PathBuf::from(format!(
-                    "/run/user/{}",
-                    std::os::unix::fs::MetadataExt::uid(&metadata)
-                ))
-            })
-        })
 }
 
 #[derive(Debug, Deserialize)]

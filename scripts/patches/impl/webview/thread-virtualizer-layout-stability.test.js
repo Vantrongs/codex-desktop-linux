@@ -132,7 +132,7 @@ test("thread virtualizer descriptor upgrades the previous patch atomically", () 
   const extractedDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-thread-upgrade-"));
   try {
     const assetsDir = path.join(extractedDir, "webview", "assets");
-    const assetPath = path.join(assetsDir, "conversation-source-previous.js");
+    const assetPath = path.join(assetsDir, "open-sources-side-panel-tab-previous.js");
     fs.mkdirSync(assetsDir, { recursive: true });
     fs.writeFileSync(
       assetPath,
@@ -209,9 +209,9 @@ test("thread virtualizer layout descriptor selects one semantic asset", () => {
   try {
     const assetsDir = path.join(extractedDir, "webview", "assets");
     fs.mkdirSync(assetsDir, { recursive: true });
-    fs.writeFileSync(path.join(assetsDir, "conversation-source-fixture.js"), fixture());
+    fs.writeFileSync(path.join(assetsDir, "open-sources-side-panel-tab-fixture.js"), fixture());
     fs.writeFileSync(
-      path.join(assetsDir, "conversation-source-decoy.js"),
+      path.join(assetsDir, "open-sources-side-panel-tab-decoy.js"),
       fixture().replace("q(t),n&&ae()", "x(t),n&&ae()"),
     );
     const shadowedDecoy = fixture().replace(
@@ -219,7 +219,7 @@ test("thread virtualizer layout descriptor selects one semantic asset", () => {
       "let{update:q}=helpers;q(t),n&&ae()",
     );
     fs.writeFileSync(
-      path.join(assetsDir, "conversation-source-shadowed.js"),
+      path.join(assetsDir, "open-sources-side-panel-tab-shadowed.js"),
       shadowedDecoy,
     );
     const report = createPatchReport();
@@ -232,25 +232,25 @@ test("thread virtualizer layout descriptor selects one semantic asset", () => {
     );
 
     const patched = fs.readFileSync(
-      path.join(assetsDir, "conversation-source-fixture.js"),
+      path.join(assetsDir, "open-sources-side-panel-tab-fixture.js"),
       "utf8",
     );
     assert.match(patched, new RegExp(THREAD_VIRTUALIZER_LAYOUT_MARKER, "u"));
     assert.equal(report.patches[0]?.status, "applied");
     assert.equal(
       report.patches[0]?.assetName,
-      "conversation-source-fixture.js",
+      "open-sources-side-panel-tab-fixture.js",
     );
     assert.doesNotMatch(
       fs.readFileSync(
-        path.join(assetsDir, "conversation-source-decoy.js"),
+        path.join(assetsDir, "open-sources-side-panel-tab-decoy.js"),
         "utf8",
       ),
       new RegExp(THREAD_VIRTUALIZER_LAYOUT_MARKER, "u"),
     );
     assert.equal(
       fs.readFileSync(
-        path.join(assetsDir, "conversation-source-shadowed.js"),
+        path.join(assetsDir, "open-sources-side-panel-tab-shadowed.js"),
         "utf8",
       ),
       shadowedDecoy,

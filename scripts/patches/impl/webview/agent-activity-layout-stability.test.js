@@ -96,7 +96,7 @@ test("agent activity layout descriptor selects one semantic asset and verifies i
   try {
     const assetsDir = path.join(extractedDir, "webview", "assets");
     fs.mkdirSync(assetsDir, { recursive: true });
-    fs.writeFileSync(path.join(assetsDir, "app-initial-fixture.js"), fixture());
+    fs.writeFileSync(path.join(assetsDir, "subagent-activity-chip-group-fixture.js"), fixture());
     fs.writeFileSync(
       path.join(assetsDir, "app-main-decoy.js"),
       uncorrelatedFixture(),
@@ -111,12 +111,12 @@ test("agent activity layout descriptor selects one semantic asset and verifies i
     );
 
     const patched = fs.readFileSync(
-      path.join(assetsDir, "app-initial-fixture.js"),
+      path.join(assetsDir, "subagent-activity-chip-group-fixture.js"),
       "utf8",
     );
     assert.match(patched, new RegExp(AGENT_ACTIVITY_LAYOUT_MARKER, "u"));
     assert.equal(report.patches[0]?.status, "applied");
-    assert.equal(report.patches[0]?.assetName, "app-initial-fixture.js");
+    assert.equal(report.patches[0]?.assetName, "subagent-activity-chip-group-fixture.js");
     assert.equal(
       fs.readFileSync(path.join(assetsDir, "app-main-decoy.js"), "utf8"),
       uncorrelatedFixture(),

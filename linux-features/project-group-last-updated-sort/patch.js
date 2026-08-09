@@ -1,14 +1,14 @@
 "use strict";
 
 const currentGroupSorter =
-  "function h2o({groups:e,items:t,projectOrder:n}){let r=new Map(t.map(e=>[e.task.key,e.recencyAt]));return iZi(e.map((e,t)=>({group:e,index:t,recencyAt:y2o(e,r)})).sort((e,t)=>t.recencyAt-e.recencyAt||e.index-t.index).map(({group:e})=>e),n)}";
+  "function p5o({groups:e,items:t,projectOrder:n}){let r=new Map(t.map(e=>[e.task.key,e.recencyAt]));return G6i(e.map((e,t)=>({group:e,index:t,recencyAt:e.threadKeys.reduce((e,t)=>Math.max(e,r.get(t)??0),e.projectUpdatedAt??0)})).sort((e,t)=>t.recencyAt-e.recencyAt||e.index-t.index).map(({group:e})=>e),n)}";
 const patchedGroupSorter =
-  "function h2o({groups:e,items:t,projectOrder:n,sortMode:codexLinuxProjectSortMode}){let r=new Map(t.map(e=>[e.task.key,e.recencyAt]));return((codexLinuxRecencySortedGroups)=>codexLinuxProjectSortMode===`updated_at`?codexLinuxRecencySortedGroups:iZi(codexLinuxRecencySortedGroups,n))(e.map((e,t)=>({group:e,index:t,recencyAt:y2o(e,r)})).sort((e,t)=>t.recencyAt-e.recencyAt||e.index-t.index).map(({group:e})=>e))}";
+  "function p5o({groups:e,items:t,projectOrder:n,sortMode:codexLinuxProjectSortMode}){let r=new Map(t.map(e=>[e.task.key,e.recencyAt]));return((codexLinuxRecencySortedGroups)=>codexLinuxProjectSortMode===`updated_at`?codexLinuxRecencySortedGroups:G6i(codexLinuxRecencySortedGroups,n))(e.map((e,t)=>({group:e,index:t,recencyAt:e.threadKeys.reduce((e,t)=>Math.max(e,r.get(t)??0),e.projectUpdatedAt??0)})).sort((e,t)=>t.recencyAt-e.recencyAt||e.index-t.index).map(({group:e})=>e))}";
 
 const currentGroupSorterCall =
-  "T=h2o({groups:m2o({groups:C,items:s}),items:s,projectOrder:ap(t,zl.PROJECT_ORDER)})";
+  "N=p5o({groups:A,items:f,projectOrder:jm(t,_u.PROJECT_ORDER)})";
 const patchedGroupSorterCall =
-  "T=h2o({groups:m2o({groups:C,items:s}),items:s,projectOrder:ap(t,zl.PROJECT_ORDER),sortMode:t(Ez).projectSortMode})";
+  "N=p5o({groups:A,items:f,projectOrder:jm(t,_u.PROJECT_ORDER),sortMode:M})";
 
 function countOccurrences(source, needle) {
   return source.split(needle).length - 1;

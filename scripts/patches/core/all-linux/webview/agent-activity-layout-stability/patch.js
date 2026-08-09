@@ -14,7 +14,7 @@ module.exports = [webviewAssetPatch({
   id: "linux-agent-activity-layout-stability",
   order: 1065,
   ciPolicy: CI_POLICY_REQUIRED_UPSTREAM,
-  pattern: /^app-(?:initial|main)-[^.]+\.js$/,
+  pattern: /^subagent-activity-chip-group-[^.]+\.js$/,
   assetMatch: isAgentActivityLayoutAsset,
   missingDescription: "agent activity disclosure webview bundle",
   skipDescription: "Linux agent activity disclosure layout stability patch",
