@@ -335,6 +335,7 @@ LAUNCH_ACTION_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$APP_STATE_DIR}/$CODEX_LINUX_APP_I
 LAUNCH_ACTION_SOCKET="$LAUNCH_ACTION_RUNTIME_DIR/launch-action.sock"
 PACKAGED_RUNTIME_HELPER="$SCRIPT_DIR/.codex-linux/codex-packaged-runtime.sh"
 COLD_START_HOOK_DIR="$SCRIPT_DIR/.codex-linux/cold-start.d"
+SINGLE_INSTANCE_REQUIRED_MARKER="$SCRIPT_DIR/.codex-linux/single-instance-required"
 FEATURE_ENV_DIR="$SCRIPT_DIR/.codex-linux/env.d"
 FEATURE_PRELAUNCH_HOOK_DIR="$SCRIPT_DIR/.codex-linux/prelaunch.d"
 FEATURE_ELECTRON_ARGS_DIR="$SCRIPT_DIR/.codex-linux/electron-args.d"
@@ -472,6 +473,14 @@ parse_launcher_args() {
 configure_multi_launch_instance() {
     parse_launcher_args "$@"
     [ "$MULTI_LAUNCH_REQUESTED" -eq 1 ] || return 0
+
+    if [ "${CODEX_REMOTE_CONTROL_APP_SERVER_MODE:-}" != "proxy" ] &&
+       [ -f "$SINGLE_INSTANCE_REQUIRED_MARKER" ] &&
+       [ ! -L "$SINGLE_INSTANCE_REQUIRED_MARKER" ]; then
+        echo "$CODEX_LINUX_APP_DISPLAY_NAME requires one Desktop instance while Remote Control is enabled; using the existing instance." >&2
+        MULTI_LAUNCH_REQUESTED=0
+        return 0
+    fi
 
     local base_state_dir="$APP_STATE_DIR"
     local selected_port
@@ -2173,17 +2182,22 @@ find_fnm_codex_cli() {
 }
 
 find_codex_cli() {
-    if command -v codex >/dev/null 2>&1; then
-        command -v codex
+    local path_hit
+    if path_hit="$(command -v codex 2>/dev/null || true)" && [ -n "$path_hit" ] && is_codex_cli_path "$path_hit"; then
+        echo "$path_hit"
         return 0
     fi
 
     if [ -n "${HOMEBREW_PREFIX:-}" ]; then
         local homebrew_candidate="$HOMEBREW_PREFIX/bin/codex"
-        if [ -x "$homebrew_candidate" ]; then
+        if [ -x "$homebrew_candidate" ] && is_codex_cli_path "$homebrew_candidate"; then
             echo "$homebrew_candidate"
             return 0
         fi
+    fi
+
+    if find_mise_codex_cli; then
+        return 0
     fi
 
     local nvm_dir="${NVM_DIR:-}"
@@ -2198,8 +2212,8 @@ find_codex_cli() {
         export NVM_DIR="$nvm_dir"
         # shellcheck disable=SC1090
         . "$NVM_DIR/nvm.sh" >/dev/null 2>&1 || true
-        if command -v codex >/dev/null 2>&1; then
-            command -v codex
+        if path_hit="$(command -v codex 2>/dev/null || true)" && [ -n "$path_hit" ] && is_codex_cli_path "$path_hit"; then
+            echo "$path_hit"
             return 0
         fi
     fi
@@ -2222,13 +2236,57 @@ find_codex_cli() {
         "/usr/local/bin/codex" \
         "/usr/bin/codex"
     do
-        if [ -x "$candidate" ]; then
+        if [ -x "$candidate" ] && is_codex_cli_path "$candidate"; then
             echo "$candidate"
             return 0
         fi
     done
 
     return 1
+}
+
+find_mise_codex_cli() {
+    # 优先用 mise which codex 解析（mise shim 指向 mise 本体，不能直接用 shim 路径）
+    if command -v mise >/dev/null 2>&1; then
+        local mise_resolved
+        if mise_resolved="$(mise which codex 2>/dev/null || true)" && [ -n "$mise_resolved" ] && [ -x "$mise_resolved" ]; then
+            echo "$mise_resolved"
+            return 0
+        fi
+    fi
+
+    # fallback: 直接找 mise 安装目录下的 codex（取 latest，避免版本号漂移）
+    local mise_root="${XDG_DATA_HOME:-$HOME/.local/share}/mise/installs/npm-openai-codex"
+    local latest_candidate="$mise_root/latest/bin/codex"
+    if [ -x "$latest_candidate" ]; then
+        echo "$latest_candidate"
+        return 0
+    fi
+    local versioned
+    for versioned in "$mise_root"/*/bin/codex; do
+        if [ -x "$versioned" ]; then
+            echo "$versioned"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+is_codex_cli_path() {
+    # 只拒绝解析到 mise 本体的候选（mise shim 的 readlink 指向 mise 二进制，
+    # 若采纳会 spawn mise 报 "no tasks defined"）。其他可执行目标一律接受，
+    # 包括 codex 指向不同 basename 的合法符号链接。
+    local candidate="$1"
+    [ -n "$candidate" ] || return 1
+    local resolved
+    resolved="$(readlink -f "$candidate" 2>/dev/null || echo "$candidate")"
+    case "$(basename "$resolved")" in
+        mise|mise.exe)
+            return 1
+            ;;
+    esac
+    return 0
 }
 
 pid_parent_matches() {
@@ -4419,6 +4477,17 @@ cleanup_launcher() {
     finish_bounded_launcher_logging
 }
 
+handle_launcher_signal() {
+    local signal_name="$1"
+    local exit_status="$2"
+
+    trap - "$signal_name"
+    if [ -n "${ELECTRON_PID:-}" ] && kill -0 "$ELECTRON_PID" 2>/dev/null; then
+        kill -s "$signal_name" "$ELECTRON_PID" 2>/dev/null || true
+    fi
+    exit "$exit_status"
+}
+
 launcher_lock_wait_seconds() {
     local value="${CODEX_LAUNCHER_LOCK_WAIT_SECONDS:-5}"
 
@@ -4731,9 +4800,9 @@ log_phase "initial_launch_state_refresh_start"
 refresh_launch_state
 log_phase "initial_launch_state_refreshed"
 trap cleanup_launcher EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
-trap 'exit 129' HUP
+trap 'handle_launcher_signal INT 130' INT
+trap 'handle_launcher_signal TERM 0' TERM
+trap 'handle_launcher_signal HUP 129' HUP
 
 recover_unhealthy_running_app
 prepare_launch_state_under_lock

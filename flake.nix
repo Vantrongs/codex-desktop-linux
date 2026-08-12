@@ -103,10 +103,10 @@
 
         codexDmg = pkgs.fetchurl {
           url = "https://persistent.oaistatic.com/codex-app-prod/ChatGPT.dmg";
-          hash = "sha256-+KWnSss4qrSlmsCtf+87tLtPKAp+0l88t+9hRd9eh0c=";
+          hash = "sha256-kfxLgJwnMLOeV9mtvGswxmnvB0yQDKKMY6HgtvpBJow=";
         };
 
-        codexVersion = "26.803.41515";
+        codexVersion = "26.803.81509";
         electronVersion = "42.3.0";
         electronPlatform =
           {
@@ -179,6 +179,105 @@
           name = "node-hid-3.3.0.tgz";
           url = "https://registry.npmjs.org/node-hid/-/node-hid-3.3.0.tgz";
           hash = "sha512-j+dFgJLRAE0nufQKXk3IfS6T6YuHhCgMvz4TrG0sgtb6DSCdYpfJ1etcdmeCmPQjUgO+yo32ktVrRliNs/+fmg==";
+        };
+
+        watchboundArtifacts = builtins.fromJSON (
+          builtins.readFile ./linux-features/directory-only-working-tree-watch/watchbound-artifacts.json
+        );
+        watchboundVersion = watchboundArtifacts.version;
+        watchboundSourceArchive = pkgs.fetchurl {
+          name = "watchbound-${watchboundArtifacts.source.revision}.tar.gz";
+          inherit (watchboundArtifacts.source) url sha256;
+        };
+        watchboundWrapperArchive = pkgs.fetchurl {
+          name = "watchbound-${watchboundVersion}.tgz";
+          inherit (watchboundArtifacts.packages.wrapper) url sha256;
+        };
+        watchboundLoaderArchive = pkgs.fetchurl {
+          name = "watchbound-node-${watchboundVersion}.tgz";
+          inherit (watchboundArtifacts.packages.loader) url sha256;
+        };
+        watchboundSource = pkgs.runCommandLocal "watchbound-${watchboundVersion}-source" {
+          nativeBuildInputs = [ pkgs.gnutar pkgs.gzip ];
+        } ''
+          mkdir -p "$out"
+          tar -xzf ${watchboundSourceArchive} -C "$out" --strip-components=1
+          chmod -R u+w "$out"
+          for manifest in "$out/package.json" "$out/js/package.json" "$out/node/package.json"; do
+            substituteInPlace "$manifest" \
+              --replace-fail '"version": "0.0.0-development"' '"version": "${watchboundVersion}"'
+          done
+          substituteInPlace "$out/js/package.json" \
+            --replace-fail '"@gadicc/watchbound-node": "workspace:0.0.0-development"' \
+              '"@gadicc/watchbound-node": "workspace:${watchboundVersion}"'
+          substituteInPlace "$out/Cargo.toml" \
+            --replace-fail 'version = "0.0.0-development"' 'version = "${watchboundVersion}"'
+          substituteInPlace "$out/Cargo.lock" \
+            --replace-fail 'version = "0.0.0-development"' 'version = "${watchboundVersion}"'
+          substituteInPlace "$out/pnpm-lock.yaml" \
+            --replace-fail 'specifier: workspace:0.0.0-development' \
+              'specifier: workspace:${watchboundVersion}'
+        '';
+        watchboundTarget = {
+          x86_64-linux = {
+            id = "linux-x64-gnu";
+            rustTarget = "x86_64-unknown-linux-gnu";
+            binary = "watchbound.linux-x64-gnu.node";
+          };
+          aarch64-linux = {
+            id = "linux-arm64-gnu";
+            rustTarget = "aarch64-unknown-linux-gnu";
+            binary = "watchbound.linux-arm64-gnu.node";
+          };
+        }.${system};
+        watchboundNative = pkgs.rustPlatform.buildRustPackage {
+          pname = "watchbound-native-${watchboundTarget.id}";
+          version = watchboundVersion;
+          src = watchboundSource;
+          # Materialized from the source revision pinned in the artifact manifest.
+          cargoLock.lockFile = ./nix/watchbound-Cargo.lock;
+          cargoBuildFlags = [ "-p" "watchbound-node" ];
+          doCheck = false;
+          installPhase = ''
+            runHook preInstall
+            release_dir="target/''${CARGO_BUILD_TARGET:-${watchboundTarget.rustTarget}}/release"
+            if [ ! -f "$release_dir/libwatchbound_node.so" ]; then
+              release_dir="target/release"
+            fi
+            install -Dm0555 "$release_dir/libwatchbound_node.so" \
+              "$out/lib/${watchboundTarget.binary}"
+            runHook postInstall
+          '';
+        };
+        watchboundPackage = pkgs.stdenv.mkDerivation {
+          pname = "watchbound-node-package-${watchboundTarget.id}";
+          version = watchboundVersion;
+          src = watchboundSource;
+          nativeBuildInputs = [ pkgs.gnutar pkgs.gzip pkgs.nodejs_24 ];
+          dontConfigure = true;
+          dontBuild = true;
+          installPhase = ''
+            runHook preInstall
+            node scripts/generate-nix-package.mjs \
+              --target ${watchboundTarget.id} \
+              --artifact ${watchboundNative}/lib/${watchboundTarget.binary} \
+              --output "$out"
+            rm -rf \
+              "$out/lib/node_modules/watchbound" \
+              "$out/lib/node_modules/@gadicc/watchbound-node"
+            mkdir -p \
+              "$out/lib/node_modules/watchbound" \
+              "$out/lib/node_modules/@gadicc/watchbound-node"
+            tar -xzf ${watchboundWrapperArchive} \
+              -C "$out/lib/node_modules/watchbound" --strip-components=1
+            tar -xzf ${watchboundLoaderArchive} \
+              -C "$out/lib/node_modules/@gadicc/watchbound-node" --strip-components=1
+            node ${sourceRoot}/linux-features/directory-only-working-tree-watch/watchbound-package.js \
+              --verify-controlled-package-root \
+              "$out/lib/node_modules" \
+              ${electronPlatform.arch}
+            runHook postInstall
+          '';
         };
 
         browserUseNodeReplRuntime = pkgs.fetchurl {
@@ -292,6 +391,9 @@
           '';
         };
 
+        nativeModulesManifest = builtins.fromJSON (builtins.readFile ./nix/native-modules/package.json);
+        parcelWatcherVersion = nativeModulesManifest.dependencies."@parcel/watcher";
+
         nativeModulesNodeModules = pkgs.importNpmLock.buildNodeModules {
           npmRoot = ./nix/native-modules;
           inherit (pkgs) nodejs;
@@ -355,6 +457,47 @@
             mkdir -p "$out"
             cp -R node_modules/better-sqlite3 "$out/better-sqlite3"
             cp -R node_modules/node-pty "$out/node-pty"
+            node - "$PWD/node_modules" "$out" "@parcel/watcher" <<'NODE'
+            const fs = require("fs");
+            const path = require("path");
+
+            const [sourceRoot, targetRoot, entryPackage] = process.argv.slice(2);
+            const staged = new Set();
+
+            function packagePath(root, name) {
+              return path.join(root, ...name.split("/"));
+            }
+
+            function stagePackage(name, required) {
+              if (staged.has(name)) return;
+
+              const source = packagePath(sourceRoot, name);
+              if (!fs.existsSync(source)) {
+                if (required) throw new Error("Missing required runtime dependency " + name);
+                return;
+              }
+
+              const manifestPath = path.join(source, "package.json");
+              if (!fs.existsSync(manifestPath)) {
+                throw new Error("Missing package.json for runtime dependency " + name);
+              }
+
+              const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+              const target = packagePath(targetRoot, name);
+              fs.mkdirSync(path.dirname(target), { recursive: true });
+              fs.cpSync(source, target, { recursive: true });
+              staged.add(name);
+
+              for (const dependency of Object.keys(manifest.dependencies || {})) {
+                stagePackage(dependency, true);
+              }
+              for (const dependency of Object.keys(manifest.optionalDependencies || {})) {
+                stagePackage(dependency, false);
+              }
+            }
+
+            stagePackage(entryPackage, true);
+            NODE
             find "$out/better-sqlite3/build" -type f ! -name "*.node" -delete 2>/dev/null || true
             find "$out/node-pty/build" -type f ! -name "*.node" -delete 2>/dev/null || true
             find "$out" -type d -empty -delete 2>/dev/null || true
@@ -584,6 +727,9 @@ PY
               normalizeLinuxFeaturesConfig linuxFeaturesConfigOverride;
           effectiveLinuxFeatureIds = effectiveLinuxFeaturesConfig.enabled;
           codexMicroEnabled = builtins.elem "codex-micro" effectiveLinuxFeatureIds;
+          watchboundEnabled = builtins.elem
+            "directory-only-working-tree-watch"
+            effectiveLinuxFeatureIds;
         in
         pkgs.stdenv.mkDerivation {
           pname = "codex-desktop${packageSuffix { inherit enableComputerUseUi; linuxFeatureIds = effectiveLinuxFeatureIds; }}-payload";
@@ -638,6 +784,9 @@ PY
             export CODEX_NATIVE_MODULES_SOURCE="${codexNativeModules}"
             ${pkgs.lib.optionalString codexMicroEnabled ''
             export CODEX_MICRO_NODE_HID_ARCHIVE="${codexMicroNodeHidArchive}"
+            ''}
+            ${pkgs.lib.optionalString watchboundEnabled ''
+            export CODEX_WATCHBOUND_PACKAGE_ROOT="${watchboundPackage}/lib/node_modules"
             ''}
             ${pkgs.lib.optionalString (browserUseNodeRepl != null) ''
             export CODEX_LINUX_NODE_REPL_SOURCE="${browserUseNodeRepl}/bin/node_repl"
@@ -962,6 +1111,29 @@ PY
 
         checks = {
           notification-actions-linux = codexNotificationActionsBinary;
+          parcel-watcher-staged-runtime = pkgs.runCommand "codex-parcel-watcher-staged-runtime-check" {
+            nativeBuildInputs = [ pkgs.nodejs ];
+          } ''
+            mkdir -p app/node_modules
+            cat > app/package.json <<'EOF'
+            {"dependencies":{"@parcel/watcher":"${parcelWatcherVersion}"}}
+            EOF
+
+            export WORK_DIR="$TMPDIR"
+            info() { echo "[INFO] $*" >&2; }
+            warn() { echo "[WARN] $*" >&2; }
+            error() { echo "[ERROR] $*" >&2; exit 1; }
+            source ${nativeModulesBuildSupport}/scripts/lib/native-modules.sh
+            stage_parcel_watcher_for_linux "$PWD/app" "${codexNativeModules}"
+
+            NODE_PATH="$PWD/app/node_modules" node -e '
+              const watcher = require("@parcel/watcher");
+              if (typeof watcher.subscribe !== "function") {
+                throw new Error("staged @parcel/watcher did not expose subscribe()");
+              }
+            '
+            touch "$out"
+          '';
           notification-actions-installer = pkgs.runCommand "codex-notification-actions-installer-check" { } ''
             grep -F 'CODEX_NOTIFICATION_ACTIONS_SOURCE=' ${installer}/bin/codex-desktop-installer >/dev/null
             touch "$out"
