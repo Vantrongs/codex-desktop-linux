@@ -7476,17 +7476,19 @@ PY
     local mise_shim_dir="$workspace/mise-shims"
     local mise_bin_dir="$workspace/mise-bin"
     local mise_data_dir="$workspace/mise-data"
-    local mise_installed="$mise_data_dir/mise/installs/npm-openai-codex/9.99.0/bin/codex"
-    mkdir -p "$mise_shim_dir" "$mise_bin_dir" "$(dirname "$mise_installed")"
-    printf '#!/usr/bin/env bash\nprintf "codex-cli 9.99.0\\n"\n' > "$mise_installed"
-    chmod +x "$mise_installed"
+    local mise_installed="$mise_data_dir/mise/installs/npm-openai-codex/0.200.0/bin/codex"
+    local mise_older_installed="$mise_data_dir/mise/installs/npm-openai-codex/0.147.0/bin/codex"
+    mkdir -p "$mise_shim_dir" "$mise_bin_dir" "$(dirname "$mise_installed")" "$(dirname "$mise_older_installed")"
+    printf '#!/usr/bin/env bash\nprintf "codex-cli 0.200.0\\n"\n' > "$mise_installed"
+    printf '#!/usr/bin/env bash\nprintf "codex-cli 0.147.0\\n"\n' > "$mise_older_installed"
+    chmod +x "$mise_installed" "$mise_older_installed"
     # mise shim: symlink named codex pointing at the mise binary
     printf '#!/usr/bin/env bash\nprintf "mise 2026.8.3\\n"\n' > "$mise_bin_dir/mise"
     chmod +x "$mise_bin_dir/mise"
     ln -s "$mise_bin_dir/mise" "$mise_shim_dir/codex"
     selected_cli="$(env -i PATH="$mise_shim_dir:$clean_tool_path" HOME="$fake_home" XDG_DATA_HOME="$mise_data_dir" "$launcher_probe" find)"
     [ "$selected_cli" = "$mise_installed" ] || \
-        fail "CLI lookup must resolve mise-installed codex through the mise shim, got $selected_cli"
+        fail "CLI lookup must resolve the newest mise-installed codex through the mise shim, got $selected_cli"
 
     # no mise install dir present: fall back to nothing rather than the mise binary
     local empty_home="$workspace/empty-mise-home"

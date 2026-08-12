@@ -2263,12 +2263,21 @@ find_mise_codex_cli() {
         return 0
     fi
     local versioned
+    local newest_versioned=""
+    local version_name
+    local newest_version_name=""
     for versioned in "$mise_root"/*/bin/codex; do
-        if [ -x "$versioned" ]; then
-            echo "$versioned"
-            return 0
+        [ -x "$versioned" ] || continue
+        version_name="$(basename "$(dirname "$(dirname "$versioned")")")"
+        if [ -z "$newest_versioned" ] || [ "$(printf '%s\n%s\n' "$newest_version_name" "$version_name" | sort -V | tail -n 1)" = "$version_name" ]; then
+            newest_versioned="$versioned"
+            newest_version_name="$version_name"
         fi
     done
+    if [ -n "$newest_versioned" ]; then
+        echo "$newest_versioned"
+        return 0
+    fi
 
     return 1
 }
