@@ -95,7 +95,9 @@
         }:
           let
             normalizedFeatureIds = nixLinuxFeatures.normalize (
-              linuxFeatureIds ++ lib.optional enableComputerUseUi "computer-use-linux"
+              [ "nixos-git-watcher-compatibility" ]
+              ++ linuxFeatureIds
+              ++ lib.optional enableComputerUseUi "computer-use-linux"
             );
             featuresConfig = pkgs.writeText "codex-linux-features.json" (builtins.toJSON {
               enabled = normalizedFeatureIds;
@@ -157,7 +159,8 @@
               runHook postInstall
             '';
             passthru = {
-              inherit linuxFeatureIds upstreamDeb;
+              linuxFeatureIds = normalizedFeatureIds;
+              inherit upstreamDeb;
               upstreamVersion = codexVersion;
               upstreamArchitecture = officialPackage.architecture;
             };

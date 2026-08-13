@@ -14,6 +14,8 @@ test("linux-performance-workarounds remains an opt-in renderer-only feature", ()
       ["sidebar-scroll", "webview-asset"],
       ["app-shell-tab-layout", "webview-asset"],
       ["markdown-animation", "webview-asset"],
+      ["linux-agent-activity-layout-stability", "webview-asset"],
+      ["linux-thread-virtualizer-layout-stability", "webview-asset"],
     ],
   );
 });

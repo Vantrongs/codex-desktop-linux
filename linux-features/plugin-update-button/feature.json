@@ -1,0 +1,9 @@
+{
+  "id": "plugin-update-button",
+  "title": "Git-sourced Plugin Update Button",
+  "description": "Adds an explicit update action to installed plugins whose plugin source is Git-backed.",
+  "defaultEnabled": false,
+  "entrypoints": {
+    "patchDescriptors": "./patch.js"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "id": "linux-renderer-crash-diagnostics",
+  "title": "Linux Renderer Crash Diagnostics",
+  "description": "Retain bounded renderer crash evidence for diagnosing Linux restarts.",
+  "defaultEnabled": false,
+  "entrypoints": {
+    "patchDescriptors": "./patch.js"
+  }
+}
