@@ -1,8 +1,9 @@
 # Linux performance workarounds
 
 Disabled-by-default renderer workarounds for machines where sidebar scrolling,
-tab layout, or streaming Markdown animations regress. Enable only after a
-measured problem on the official Linux runtime.
+tab layout, streaming Markdown animations, agent-activity disclosure layout,
+or thread virtualizer resize work regress. Enable only after a measured problem
+or after the corresponding unsafe official-bundle contract is verified.
 
 Enable it in `linux-features/features.json` only for a reproduced regression:
 

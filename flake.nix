@@ -437,7 +437,9 @@
         }:
           let
             userFeatureIds = nixLinuxFeatures.normalize (
-              linuxFeatureIds ++ lib.optional enableComputerUseUi "computer-use-linux"
+              [ "nixos-git-watcher-compatibility" ]
+              ++ linuxFeatureIds
+              ++ lib.optional enableComputerUseUi "computer-use-linux"
             );
             internalNixFeatureIds = [ "nix-store-bundled-marketplace-permissions" ];
             effectiveFeatureIds = nixLinuxFeatures.normalizeAll (

@@ -1,0 +1,9 @@
+{
+  "id": "nixos-git-watcher-compatibility",
+  "title": "NixOS Git Watcher Compatibility",
+  "description": "Select the glibc Parcel watcher without invoking detect-libc after patchelf.",
+  "defaultEnabled": false,
+  "entrypoints": {
+    "patchDescriptors": "./patch.js"
+  }
+}

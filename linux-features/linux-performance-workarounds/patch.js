@@ -1,6 +1,19 @@
 "use strict";
 
-const { webviewAssetPatch } = require("../../scripts/patches/descriptor.js");
+const {
+  CI_POLICY_REQUIRED_UPSTREAM,
+  webviewAssetPatch,
+} = require("../../scripts/patches/descriptor.js");
+const {
+  AGENT_ACTIVITY_LAYOUT_MARKER,
+  applyLinuxAgentActivityLayoutStabilityPatch,
+  isAgentActivityLayoutAsset,
+} = require("../../scripts/patches/impl/webview/agent-activity-layout-stability.js");
+const {
+  THREAD_VIRTUALIZER_LAYOUT_MARKER,
+  applyLinuxThreadVirtualizerLayoutStabilityPatch,
+  isThreadVirtualizerLayoutAsset,
+} = require("../../scripts/patches/impl/webview/thread-virtualizer-layout-stability.js");
 const {
   applyLinuxAppShellTabLayoutPerformancePatch,
   applyLinuxMarkdownAnimationPerformancePatch,
@@ -43,5 +56,27 @@ module.exports = [
     missingDescription: "streaming Markdown animation stylesheet",
     skipDescription: "Markdown animation performance workaround",
     apply: applyLinuxMarkdownAnimationPerformancePatch,
+  }),
+  webviewAssetPatch({
+    id: "linux-agent-activity-layout-stability",
+    order: 20_130,
+    ciPolicy: CI_POLICY_REQUIRED_UPSTREAM,
+    pattern: /^subagent-activity-chip-group-[^.]+\.js$/,
+    assetMatch: isAgentActivityLayoutAsset,
+    missingDescription: "agent activity disclosure webview bundle",
+    skipDescription: "Linux agent activity disclosure layout stability patch",
+    requiredMarkers: [AGENT_ACTIVITY_LAYOUT_MARKER],
+    apply: applyLinuxAgentActivityLayoutStabilityPatch,
+  }),
+  webviewAssetPatch({
+    id: "linux-thread-virtualizer-layout-stability",
+    order: 20_140,
+    ciPolicy: CI_POLICY_REQUIRED_UPSTREAM,
+    pattern: /^open-sources-side-panel-tab-[^.]+\.js$/,
+    assetMatch: isThreadVirtualizerLayoutAsset,
+    missingDescription: "thread virtualizer webview bundle",
+    skipDescription: "Linux thread virtualizer layout stability patch",
+    requiredMarkers: [THREAD_VIRTUALIZER_LAYOUT_MARKER],
+    apply: applyLinuxThreadVirtualizerLayoutStabilityPatch,
   }),
 ];

@@ -95,7 +95,6 @@ test("computer-use-linux staging registers the bundled plugin idempotently", (t)
     true,
   );
 });
-
 test("current host-platform contract enables Linux without dropping requirement gates", () => {
   const source = "function owner(){let feature={featureName:`computer_use`},p=`linux`,r=h({areRequirementsPending:a,areRequiredFeaturesEnabled:b,enabled:c,isBrowserAndComputerUseAllowed:d,isAnyFeatureLoading:e,isComputerUseGateEnabled:f,isHostCompatiblePlatform:g(p),isPlatformLoading:i,windowType:`electron`});return r}";
   const patched = applyLinuxComputerUseHostPlatformPatch(source);
@@ -144,4 +143,43 @@ test("malformed patched host-platform variable relationship is rejected byte-ide
 
   assert.equal(matchesLinuxComputerUseHostPlatformContract(source), false);
   assert.equal(applyLinuxComputerUseHostPlatformPatch(source), source);
+});
+
+test("computer-use-linux staging preserves a malformed marketplace and fails closed", (t) => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "computer-use-linux-drift-"));
+  t.after(() => fs.rmSync(workspace, { recursive: true, force: true }));
+
+  const installDir = path.join(workspace, "app");
+  const releaseDir = path.join(workspace, "target", "release");
+  const marketplacePath = path.join(
+    installDir,
+    "resources/plugins/openai-bundled/.agents/plugins/marketplace.json",
+  );
+  fs.mkdirSync(path.dirname(marketplacePath), { recursive: true });
+  const malformed = "{\"plugins\":[";
+  fs.writeFileSync(marketplacePath, malformed);
+  fs.mkdirSync(releaseDir, { recursive: true });
+  for (const binary of ["codex-computer-use-linux", "codex-computer-use-cosmic"]) {
+    fs.writeFileSync(path.join(releaseDir, binary), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  }
+  fs.mkdirSync(path.join(workspace, "plugins/openai-bundled/plugins"), { recursive: true });
+  fs.cpSync(
+    path.resolve(__dirname, "../../plugins/openai-bundled/plugins/computer-use"),
+    path.join(workspace, "plugins/openai-bundled/plugins/computer-use"),
+    { recursive: true },
+  );
+
+  assert.throws(
+    () => execFileSync("bash", [path.join(__dirname, "stage.sh")], {
+      env: {
+        ...process.env,
+        SCRIPT_DIR: workspace,
+        INSTALL_DIR: installDir,
+        CODEX_COMPUTER_USE_BINARY_SOURCE: path.join(releaseDir, "codex-computer-use-linux"),
+        CODEX_COMPUTER_USE_COSMIC_BINARY_SOURCE: path.join(releaseDir, "codex-computer-use-cosmic"),
+      },
+      stdio: "pipe",
+    }),
+  );
+  assert.equal(fs.readFileSync(marketplacePath, "utf8"), malformed);
 });

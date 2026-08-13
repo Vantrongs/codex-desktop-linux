@@ -17,11 +17,16 @@ const marketplacePath = process.argv[2];
 let marketplace = { plugins: [] };
 try {
   marketplace = JSON.parse(fs.readFileSync(marketplacePath, "utf8"));
-} catch (_error) {
-  marketplace = { plugins: [] };
+} catch (error) {
+  if (error?.code !== "ENOENT") {
+    throw error;
+  }
+}
+if (marketplace == null || typeof marketplace !== "object" || Array.isArray(marketplace)) {
+  throw new TypeError("Bundled plugin marketplace must be a JSON object");
 }
 if (!Array.isArray(marketplace.plugins)) {
-  marketplace.plugins = [];
+  throw new TypeError("Bundled plugin marketplace plugins field must be an array");
 }
 marketplace.plugins = marketplace.plugins.filter((plugin) => plugin?.name !== "computer-use");
 marketplace.plugins.push({
@@ -37,7 +42,9 @@ marketplace.plugins.push({
   category: "Productivity",
 });
 fs.mkdirSync(path.dirname(marketplacePath), { recursive: true });
-fs.writeFileSync(marketplacePath, `${JSON.stringify(marketplace, null, 2)}\n`);
+const temporaryPath = `${marketplacePath}.tmp-${process.pid}`;
+fs.writeFileSync(temporaryPath, `${JSON.stringify(marketplace, null, 2)}\n`);
+fs.renameSync(temporaryPath, marketplacePath);
 NODE
 }
 
