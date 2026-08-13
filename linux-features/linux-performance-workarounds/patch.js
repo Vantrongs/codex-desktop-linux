@@ -15,6 +15,21 @@ const {
   isThreadVirtualizerLayoutAsset,
 } = require("../../scripts/patches/impl/webview/thread-virtualizer-layout-stability.js");
 const {
+  THREAD_HISTORY_PAGINATION_MARKER,
+  applyLinuxThreadHistoryPaginationPatch,
+  isThreadHistoryPaginationAsset,
+} = require("../../scripts/patches/impl/webview/thread-history-pagination.js");
+const {
+  SUBAGENT_RUNTIME_STATUS_MARKER,
+  applyLinuxSubagentRuntimeStatusPatch,
+  isSubagentRuntimeStatusAsset,
+} = require("../../scripts/patches/impl/webview/subagent-runtime-status.js");
+const {
+  SUBAGENT_TOPOLOGY_METADATA_MARKER,
+  applyLinuxSubagentTopologyMetadataOnlyPatch,
+  isSubagentTopologyMetadataAsset,
+} = require("../../scripts/patches/impl/webview/subagent-topology-metadata-only.js");
+const {
   applyLinuxAppShellTabLayoutPerformancePatch,
   applyLinuxMarkdownAnimationPerformancePatch,
   applyLinuxSidebarScrollPerformancePatch,
@@ -78,5 +93,38 @@ module.exports = [
     skipDescription: "Linux thread virtualizer layout stability patch",
     requiredMarkers: [THREAD_VIRTUALIZER_LAYOUT_MARKER],
     apply: applyLinuxThreadVirtualizerLayoutStabilityPatch,
+  }),
+  webviewAssetPatch({
+    id: "linux-thread-history-server-pagination",
+    order: 20_150,
+    ciPolicy: CI_POLICY_REQUIRED_UPSTREAM,
+    pattern: /^app-initial-[^.]+\.js$/,
+    assetMatch: isThreadHistoryPaginationAsset,
+    missingDescription: "thread resume history pagination webview bundle",
+    skipDescription: "Linux thread history server pagination patch",
+    requiredMarkers: [THREAD_HISTORY_PAGINATION_MARKER],
+    apply: applyLinuxThreadHistoryPaginationPatch,
+  }),
+  webviewAssetPatch({
+    id: "linux-subagent-topology-metadata-only",
+    order: 20_155,
+    ciPolicy: CI_POLICY_REQUIRED_UPSTREAM,
+    pattern: /^app-initial-[^.]+\.js$/,
+    assetMatch: isSubagentTopologyMetadataAsset,
+    missingDescription: "subagent topology hydration webview bundle",
+    skipDescription: "Linux subagent metadata-only topology patch",
+    requiredMarkers: [SUBAGENT_TOPOLOGY_METADATA_MARKER],
+    apply: applyLinuxSubagentTopologyMetadataOnlyPatch,
+  }),
+  webviewAssetPatch({
+    id: "linux-subagent-runtime-status-reconciliation",
+    order: 20_160,
+    ciPolicy: CI_POLICY_REQUIRED_UPSTREAM,
+    pattern: /^app-initial-[^.]+\.js$/,
+    assetMatch: isSubagentRuntimeStatusAsset,
+    missingDescription: "subagent runtime status projection webview bundle",
+    skipDescription: "Linux subagent runtime status reconciliation patch",
+    requiredMarkers: [SUBAGENT_RUNTIME_STATUS_MARKER],
+    apply: applyLinuxSubagentRuntimeStatusPatch,
   }),
 ];
