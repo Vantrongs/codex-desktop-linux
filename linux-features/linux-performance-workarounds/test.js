@@ -17,7 +17,9 @@ test("linux-performance-workarounds remains an opt-in renderer-only feature", ()
       ["linux-agent-activity-layout-stability", "webview-asset"],
       ["linux-thread-virtualizer-layout-stability", "webview-asset"],
       ["linux-thread-history-server-pagination", "webview-asset"],
+      ["linux-thread-navigation-history-index", "webview-asset"],
       ["linux-subagent-topology-metadata-only", "webview-asset"],
+      ["linux-inactive-thread-retention", "webview-asset"],
       ["linux-subagent-runtime-status-reconciliation", "webview-asset"],
     ],
   );

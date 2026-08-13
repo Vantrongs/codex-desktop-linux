@@ -20,6 +20,11 @@ const {
   isThreadHistoryPaginationAsset,
 } = require("../../scripts/patches/impl/webview/thread-history-pagination.js");
 const {
+  THREAD_NAVIGATION_HISTORY_INDEX_MARKER,
+  applyLinuxThreadNavigationHistoryIndexPatch,
+  isThreadNavigationHistoryIndexAsset,
+} = require("../../scripts/patches/impl/webview/thread-navigation-history-index.js");
+const {
   SUBAGENT_RUNTIME_STATUS_MARKER,
   applyLinuxSubagentRuntimeStatusPatch,
   isSubagentRuntimeStatusAsset,
@@ -29,6 +34,11 @@ const {
   applyLinuxSubagentTopologyMetadataOnlyPatch,
   isSubagentTopologyMetadataAsset,
 } = require("../../scripts/patches/impl/webview/subagent-topology-metadata-only.js");
+const {
+  INACTIVE_THREAD_RETENTION_MARKER,
+  applyLinuxInactiveThreadRetentionPatch,
+  isInactiveThreadRetentionAsset,
+} = require("../../scripts/patches/impl/webview/inactive-thread-retention.js");
 const {
   applyLinuxAppShellTabLayoutPerformancePatch,
   applyLinuxMarkdownAnimationPerformancePatch,
@@ -106,6 +116,17 @@ module.exports = [
     apply: applyLinuxThreadHistoryPaginationPatch,
   }),
   webviewAssetPatch({
+    id: "linux-thread-navigation-history-index",
+    order: 20_152,
+    ciPolicy: CI_POLICY_REQUIRED_UPSTREAM,
+    pattern: /^local-conversation-thread-[^.]+\.js$/,
+    assetMatch: isThreadNavigationHistoryIndexAsset,
+    missingDescription: "thread navigation history index webview bundle",
+    skipDescription: "Linux thread navigation history index patch",
+    requiredMarkers: [THREAD_NAVIGATION_HISTORY_INDEX_MARKER],
+    apply: applyLinuxThreadNavigationHistoryIndexPatch,
+  }),
+  webviewAssetPatch({
     id: "linux-subagent-topology-metadata-only",
     order: 20_155,
     ciPolicy: CI_POLICY_REQUIRED_UPSTREAM,
@@ -115,6 +136,17 @@ module.exports = [
     skipDescription: "Linux subagent metadata-only topology patch",
     requiredMarkers: [SUBAGENT_TOPOLOGY_METADATA_MARKER],
     apply: applyLinuxSubagentTopologyMetadataOnlyPatch,
+  }),
+  webviewAssetPatch({
+    id: "linux-inactive-thread-retention",
+    order: 20_157,
+    ciPolicy: CI_POLICY_REQUIRED_UPSTREAM,
+    pattern: /^app-initial-[^.]+\.js$/,
+    assetMatch: isInactiveThreadRetentionAsset,
+    missingDescription: "inactive owner thread retention webview bundle",
+    skipDescription: "Linux inactive thread retention patch",
+    requiredMarkers: [INACTIVE_THREAD_RETENTION_MARKER],
+    apply: applyLinuxInactiveThreadRetentionPatch,
   }),
   webviewAssetPatch({
     id: "linux-subagent-runtime-status-reconciliation",
