@@ -25,9 +25,10 @@ codex app-server migrate-rollouts --thread-id THREAD_UUID
 codex app-server migrate-rollouts --thread-id THREAD_UUID --apply --max-mib-per-second 32
 ```
 
-The migrator stages and verifies the paginated rollout and SQLite projection
-before publishing it. Subagent rollouts are skipped; after a root is paginated,
-new v2 subagents inherit paginated history from it.
+The migrator plans legacy rollback markers by logical instruction turn, then
+stages and verifies the paginated rollout and SQLite projection before
+publishing it. Subagent rollouts are skipped; after a root is paginated, new v2
+subagents inherit paginated history from it.
 
 The subagent patch treats only an explicit current `active` status as working;
 `notLoaded`, `idle`, and missing current status remain inactive while the

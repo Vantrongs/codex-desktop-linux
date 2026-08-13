@@ -1,0 +1,158 @@
+--- a/thread-store/src/local/rollout_migration/rollback.rs
++++ b/thread-store/src/local/rollout_migration/rollback.rs
+@@ -81,6 +81,7 @@
+         let text = text.trim_start();
+         [
+             "<permissions instructions>",
++            "Approved command prefix saved:",
+             "<model_switch>",
+             "<apps_instructions>",
+             "<collaboration_mode>",
+--- a/thread-store/src/local/rollout_migration_tests.rs
++++ b/thread-store/src/local/rollout_migration_tests.rs
+@@ -12,6 +12,7 @@
+ use codex_protocol::models::ContentItem;
+ use codex_protocol::models::ResponseItem;
+ use codex_protocol::protocol::AgentMessageEvent;
++use codex_protocol::protocol::CompactedItem;
+ use codex_protocol::protocol::EventMsg;
+ use codex_protocol::protocol::ItemCompletedEvent;
+ use codex_protocol::protocol::RolloutItem;
+@@ -153,6 +154,29 @@
+     })
+ }
+
++fn response_message(role: &str, text: &str) -> ResponseItem {
++    ResponseItem::Message {
++        id: None,
++        role: role.to_string(),
++        content: vec![ContentItem::InputText {
++            text: text.to_string(),
++        }],
++        phase: None,
++        internal_chat_message_metadata_passthrough: None,
++    }
++}
++
++fn compacted(replacement_history: Vec<ResponseItem>) -> RolloutItem {
++    RolloutItem::Compacted(CompactedItem {
++        message: "checkpoint".to_string(),
++        replacement_history: Some(replacement_history),
++        window_number: Some(1),
++        first_window_id: None,
++        previous_window_id: None,
++        window_id: None,
++    })
++}
++
+ fn completed_reasoning(thread_id: ThreadId, turn_id: &str, item_id: &str) -> RolloutItem {
+     RolloutItem::EventMsg(EventMsg::ItemCompleted(ItemCompletedEvent {
+         thread_id,
+@@ -418,6 +442,107 @@
+ }
+
+ #[tokio::test]
++async fn migration_trims_approved_command_context_with_rolled_back_turn() {
++    let home = TempDir::new().expect("create Codex home");
++    let thread_id = ThreadId::new();
++    let path = write_rollout(
++        home.path(),
++        thread_id,
++        SessionSource::Cli,
++        vec![
++            RolloutItem::ResponseItem(response_message("user", "keep question")),
++            RolloutItem::ResponseItem(response_message("assistant", "keep answer")),
++            RolloutItem::ResponseItem(response_message(
++                "developer",
++                "Approved command prefix saved:\n- [\"cargo\", \"test\"]",
++            )),
++            RolloutItem::ResponseItem(response_message("user", "remove question")),
++            rollback(1),
++            user_message("replacement question"),
++        ],
++    );
++    let store = indexed_store(home.path()).await;
++
++    store
++        .migrate_rollouts(apply_options())
++        .await
++        .expect("migrate approved-prefix rollback");
++
++    assert!(!read_rollout(&path).iter().any(|line| {
++        matches!(
++            &line.item,
++            RolloutItem::ResponseItem(ResponseItem::Message { role, content, .. })
++                if role == "developer"
++                    && content.iter().any(|item| matches!(
++                        item,
++                        ContentItem::InputText { text }
++                            if text.starts_with("Approved command prefix saved:")
++                    ))
++        )
++    }));
++}
++
++#[tokio::test]
++async fn migration_rolls_back_across_compaction_without_replaying_old_history() {
++    let home = TempDir::new().expect("create Codex home");
++    let thread_id = ThreadId::new();
++    let path = write_rollout(
++        home.path(),
++        thread_id,
++        SessionSource::Cli,
++        vec![
++            turn_started("keep-before-compaction"),
++            user_message("old question"),
++            turn_complete("keep-before-compaction"),
++            compacted(vec![
++                response_message("user", "old question"),
++                ResponseItem::Message {
++                    id: None,
++                    role: "assistant".to_string(),
++                    content: vec![ContentItem::OutputText {
++                        text: "old answer".to_string(),
++                    }],
++                    phase: None,
++                    internal_chat_message_metadata_passthrough: None,
++                },
++            ]),
++            turn_started("remove-after-compaction"),
++            user_message("new question"),
++            turn_complete("remove-after-compaction"),
++            rollback(2),
++            user_message("replacement question"),
++        ],
++    );
++    let store = indexed_store(home.path()).await;
++
++    store
++        .migrate_rollouts(apply_options())
++        .await
++        .expect("migrate rollback through compaction");
++
++    let turns = store
++        .list_turns(ListTurnsParams {
++            thread_id,
++            include_archived: false,
++            cursor: None,
++            page_size: 10,
++            sort_direction: SortDirection::Asc,
++            items_view: StoredTurnItemsView::Summary,
++        })
++        .await
++        .expect("read rollback-through-compaction turns");
++    assert_eq!(turns.turns.len(), 1);
++    let replacement_history = read_rollout(&path)
++        .into_iter()
++        .find_map(|line| match line.item {
++            RolloutItem::Compacted(item) => item.replacement_history,
++            _ => None,
++        })
++        .expect("retained compaction");
++    assert!(replacement_history.is_empty());
++}
++
++#[tokio::test]
+ async fn migration_preserves_valid_final_record_without_newline() {
+     let home = TempDir::new().expect("create Codex home");
+     let thread_id = ThreadId::new();
