@@ -1,0 +1,192 @@
+--- a/thread-store/src/local/rollout_migration.rs
++++ b/thread-store/src/local/rollout_migration.rs
+@@ -682,15 +682,42 @@
+         thread_id: ThreadId,
+         journal_path: &Path,
+     ) -> ThreadStoreResult<()> {
+-        if let Some(state_db) = &self.state_db
+-            && !state_db
++        if let Some(state_db) = &self.state_db {
++            let metadata = state_db
++                .get_thread(thread_id)
++                .await
++                .map_err(migration_error)?
++                .ok_or_else(|| {
++                    migration_error(format!("thread {thread_id} is missing its SQLite metadata"))
++                })?;
++            let legacy_name = match super::helpers::distinct_thread_metadata_title(&metadata) {
++                Some(name) => Some(name),
++                None => codex_rollout::find_thread_name_by_id(
++                    self.config.codex_home.as_path(),
++                    &thread_id,
++                )
++                .await
++                .map_err(migration_error)?
++                .filter(|name| !name.trim().is_empty()),
++            };
++            if !state_db
++                .update_thread_name(thread_id, legacy_name.as_deref())
++                .await
++                .map_err(migration_error)?
++            {
++                return Err(migration_error(format!(
++                    "thread {thread_id} is missing its SQLite metadata"
++                )));
++            }
++            if !state_db
+                 .mark_thread_paginated(thread_id)
+                 .await
+                 .map_err(migration_error)?
+-        {
+-            return Err(migration_error(format!(
+-                "thread {thread_id} is missing its SQLite metadata"
+-            )));
++            {
++                return Err(migration_error(format!(
++                    "thread {thread_id} is missing its SQLite metadata"
++                )));
++            }
+         }
+         tokio::fs::remove_file(journal_path)
+             .await
+--- a/thread-store/src/local/rollout_migration_tests.rs
++++ b/thread-store/src/local/rollout_migration_tests.rs
+@@ -27,6 +27,7 @@
+ use codex_protocol::protocol::TurnStartedEvent;
+ use codex_protocol::protocol::UserMessageEvent;
+ use codex_rollout::RolloutConfig;
++use codex_rollout::append_thread_name;
+ use pretty_assertions::assert_eq;
+ use tempfile::TempDir;
+
+@@ -300,6 +301,90 @@
+ }
+
+ #[tokio::test]
++async fn migration_preserves_legacy_generated_thread_name() {
++    let home = TempDir::new().expect("create Codex home");
++    let thread_id = ThreadId::new();
++    write_rollout(
++        home.path(),
++        thread_id,
++        SessionSource::Cli,
++        vec![
++            user_message("full first user request"),
++            agent_message("first answer"),
++        ],
++    );
++    append_thread_name(home.path(), thread_id, "Generated short title")
++        .await
++        .expect("record generated legacy name");
++    let store = indexed_store(home.path()).await;
++
++    let before = store
++        .state_db()
++        .await
++        .expect("state db")
++        .get_thread(thread_id)
++        .await
++        .expect("read metadata")
++        .expect("thread metadata");
++    assert_eq!(before.title, "full first user request");
++    assert_eq!(before.name, None);
++
++    store
++        .migrate_rollouts(apply_options())
++        .await
++        .expect("migrate named legacy rollout");
++
++    let after = store
++        .state_db()
++        .await
++        .expect("state db")
++        .get_thread(thread_id)
++        .await
++        .expect("read migrated metadata")
++        .expect("migrated thread metadata");
++    assert_eq!(after.history_mode, ThreadHistoryMode::Paginated);
++    assert_eq!(after.name.as_deref(), Some("Generated short title"));
++}
++
++#[tokio::test]
++async fn migration_preserves_distinct_legacy_title_over_index_name() {
++    let home = TempDir::new().expect("create Codex home");
++    let thread_id = ThreadId::new();
++    write_rollout(
++        home.path(),
++        thread_id,
++        SessionSource::Cli,
++        vec![user_message("full first user request")],
++    );
++    append_thread_name(home.path(), thread_id, "Older generated title")
++        .await
++        .expect("record generated legacy name");
++    let store = indexed_store(home.path()).await;
++    store
++        .state_db()
++        .await
++        .expect("state db")
++        .update_thread_title(thread_id, "Custom legacy title")
++        .await
++        .expect("set custom legacy title");
++
++    store
++        .migrate_rollouts(apply_options())
++        .await
++        .expect("migrate custom-named legacy rollout");
++
++    let after = store
++        .state_db()
++        .await
++        .expect("state db")
++        .get_thread(thread_id)
++        .await
++        .expect("read migrated metadata")
++        .expect("migrated thread metadata");
++    assert_eq!(after.name.as_deref(), Some("Custom legacy title"));
++}
++
++#[tokio::test]
+ async fn migration_rolls_back_logical_turns_instead_of_empty_lifecycle_turns() {
+     let home = TempDir::new().expect("create Codex home");
+     let thread_id = ThreadId::new();
+@@ -842,6 +927,9 @@
+             agent_message("recover answer"),
+         ],
+     );
++    append_thread_name(home.path(), thread_id, "Recovered short title")
++        .await
++        .expect("record generated legacy name");
+     let store = indexed_store(home.path()).await;
+     store
+         .migrate_rollouts(apply_options())
+@@ -850,6 +938,13 @@
+     thread_history::delete_thread(&store, thread_id)
+         .await
+         .expect("simulate interrupted projection");
++    store
++        .state_db()
++        .await
++        .expect("state db")
++        .update_thread_name(thread_id, None)
++        .await
++        .expect("simulate missing migrated name");
+     let journal_path = migration_journal_path(home.path(), thread_id);
+     write_migration_journal(&journal_path)
+         .await
+@@ -882,6 +977,15 @@
+         projection.next_byte_offset,
+         fs::metadata(&path).expect("read rollout metadata").len()
+     );
++    let metadata = store
++        .state_db()
++        .await
++        .expect("state db")
++        .get_thread(thread_id)
++        .await
++        .expect("read recovered metadata")
++        .expect("recovered thread metadata");
++    assert_eq!(metadata.name.as_deref(), Some("Recovered short title"));
+ }
+
+ #[tokio::test]
