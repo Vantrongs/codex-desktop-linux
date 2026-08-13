@@ -32,8 +32,9 @@ unpatched bundled CLI,
 the ordinary enabled switch continues to work, but the new policy write fails
 and the button keeps its previous state.
 
-The companion CLI patch applies the persisted policy to both plugin Skills and
-the host Skill service. Codex CLI 0.147.0 moved that service from
+The companion CLI patch at
+`patches/codex/skill-invocation-policy.patch` applies the persisted policy to
+both plugin Skills and the host Skill service. Codex CLI 0.147.0 moved that service from
 `core-skills` to `ext/skills`; the patch follows the new source-of-truth path
 and preserves an existing policy when a later config layer changes only the
 enabled state.
@@ -54,10 +55,9 @@ rebuild the app:
 The tracked `features.example.json` intentionally remains empty.
 
 For Nix, add `"skill-invocation-policy"` to the `linuxFeatureIds` override.
-The test candidate in this worktree enables the Desktop half explicitly, but
-still contains the official bundled CLI. End-to-end testing must launch it with
-a compatible patched CLI selected separately through `CODEX_CLI_PATH`; do not
-promote the feature on the bundled CLI alone.
+The Desktop package still contains the official bundled CLI. End-to-end use
+must launch it with a compatible patched CLI selected separately through
+`CODEX_CLI_PATH`; do not enable the feature on the bundled CLI alone.
 
 ## Verification
 
