@@ -1,7 +1,7 @@
 {
   "id": "nixos-git-watcher-compatibility",
-  "title": "NixOS Git Watcher Compatibility",
-  "description": "Select the glibc Parcel watcher without invoking detect-libc after patchelf.",
+  "title": "NixOS Runtime Compatibility",
+  "description": "Adapt read-only Nix store payloads for the Git watcher and writable bundled-plugin runtime copies.",
   "defaultEnabled": false,
   "entrypoints": {
     "patchDescriptors": "./patch.js"
