@@ -253,24 +253,6 @@ diff --git a/app-server/src/request_processors/catalog_processor.rs b/app-server
 index 4d80271..5edd0c9 100644
 --- a/app-server/src/request_processors/catalog_processor.rs
 +++ b/app-server/src/request_processors/catalog_processor.rs
-@@ -16,13 +16,13 @@ pub(crate) struct CatalogRequestProcessor {
- const SKILLS_LIST_CWD_CONCURRENCY: usize = 5;
-
- fn skills_to_info(
--    skills: &[codex_core::skills::SkillMetadata],
--    disabled_paths: &HashSet<AbsolutePathBuf>,
-+    outcome: &codex_core::skills::SkillLoadOutcome,
- ) -> Vec<codex_app_server_protocol::SkillMetadata> {
--    skills
-+    outcome
-+        .skills
-         .iter()
-         .map(|skill| {
--            let enabled = !disabled_paths.contains(&skill.path_to_skills_md);
-+            let enabled = outcome.is_skill_enabled(skill);
-             codex_app_server_protocol::SkillMetadata {
-                 name: skill.name.clone(),
-                 description: skill.description.clone(),
 @@ -58,6 +58,7 @@ fn skills_to_info(
                  path: skill.path_to_skills_md.clone(),
                  scope: skill.scope.into(),
@@ -279,15 +261,6 @@ index 4d80271..5edd0c9 100644
              }
          })
          .collect()
-@@ -579,7 +580,7 @@ impl CatalogRequestProcessor {
-                         .await;
-                     let outcome = snapshot.outcome();
-                     let errors = errors_to_info(&outcome.errors);
--                    let skills = skills_to_info(&outcome.skills, &outcome.disabled_paths);
-+                    let skills = skills_to_info(outcome);
-                     (
-                         index,
-                         codex_app_server_protocol::SkillsListEntry {
 @@ -697,15 +698,19 @@ impl CatalogRequestProcessor {
              path,
              name,
@@ -345,6 +318,201 @@ index 948b906..0e7c170 100644
  }
 
  #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
+@@ -71,8 +74,10 @@ pub enum SkillConfigRuleSelector {
+ /// Enables or disables every skill matched by its selector.
+ #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+ pub struct SkillConfigRule {
+     pub selector: SkillConfigRuleSelector,
+     pub enabled: bool,
++    /// User override for whether matching skills may be selected implicitly.
++    pub allow_implicit_invocation: Option<bool>,
+ }
+
+ /// Ordered effective skill enablement rules from configuration layers.
+@@ -118,4 +123,26 @@ impl SkillConfigRules {
+         disabled_paths
+     }
++
++    /// Resolves the last explicit invocation-policy rule matching a skill.
++    /// Enabled-only rules intentionally preserve an earlier policy override.
++    pub fn resolve_allow_implicit_invocation(
++        &self,
++        skill_name: &str,
++        skill_path: &AbsolutePathBuf,
++    ) -> Option<bool> {
++        let mut resolved = None;
++        for entry in &self.entries {
++            let matches = match &entry.selector {
++                SkillConfigRuleSelector::Path(path) => path == skill_path,
++                SkillConfigRuleSelector::Name(name) => name == skill_name,
++            };
++            if matches {
++                if let Some(allow_implicit_invocation) = entry.allow_implicit_invocation {
++                    resolved = Some(allow_implicit_invocation);
++                }
++            }
++        }
++        resolved
++    }
+ }
+
+@@ -166,12 +195,19 @@ pub fn skill_config_rules_from_stack(config_layer_stack: &ConfigLayerStack) -> S
+             let Some(selector) = skill_config_rule_selector(&entry) else {
+                 continue;
+             };
+             // Preserve layer order so a later name selector can override an earlier path selector
+             // for the same loaded skill.
++            let inherited_allow_implicit_invocation = entries
++                .iter()
++                .find(|existing: &&SkillConfigRule| existing.selector == selector)
++                .and_then(|existing| existing.allow_implicit_invocation);
+             entries.retain(|entry: &SkillConfigRule| entry.selector != selector);
+             entries.push(SkillConfigRule {
+                 selector,
+                 enabled: entry.enabled,
++                allow_implicit_invocation: entry
++                    .allow_implicit_invocation
++                    .or(inherited_allow_implicit_invocation),
+             });
+         }
+     }
+diff --git a/config/src/skills_config_tests.rs b/config/src/skills_config_tests.rs
+index 23cb3c5..e7c3fd2 100644
+--- a/config/src/skills_config_tests.rs
++++ b/config/src/skills_config_tests.rs
+@@ -51,6 +51,21 @@ enabled = {enabled}
+     )
+ }
+
++fn path_policy_config(
++    path: &std::path::Path,
++    enabled: bool,
++    allow_implicit_invocation: bool,
++) -> String {
++    let path = toml::Value::String(path.display().to_string());
++    format!(
++        r#"[[skills.config]]
++path = {path}
++enabled = {enabled}
++allow_implicit_invocation = {allow_implicit_invocation}
++"#
++    )
++}
++
+ #[test]
+ fn bundled_skills_follow_effective_configuration() {
+     let codex_home = TempDir::new().expect("temp dir");
+@@ -97,12 +112,34 @@ fn session_flags_can_reenable_user_disabled_path() {
+         SkillConfigRules {
+             entries: vec![SkillConfigRule {
+                 selector: SkillConfigRuleSelector::Path(skill_path.abs()),
+                 enabled: true,
++                allow_implicit_invocation: None,
+             }],
+         }
+     );
+ }
+
++#[test]
++fn invocation_policy_survives_later_enabled_only_rule() {
++    let codex_home = TempDir::new().expect("temp dir");
++    let skill_path = codex_home.path().join("skills/demo/SKILL.md");
++    let rules = skill_config_rules_from_stack(&stack(
++        &codex_home,
++        &path_policy_config(
++            &skill_path,
++            /*enabled*/ true,
++            /*allow_implicit_invocation*/ false,
++        ),
++        &path_toggle_config(&skill_path, /*enabled*/ true),
++    ));
++
++    assert_eq!(
++        rules.resolve_allow_implicit_invocation("demo", &skill_path.abs()),
++        Some(false)
++    );
++    assert_eq!(rules.entries[0].allow_implicit_invocation, Some(false));
++}
++
+ #[test]
+ fn session_flags_can_disable_user_enabled_path() {
+     let codex_home = TempDir::new().expect("temp dir");
+@@ -117,6 +156,7 @@ fn session_flags_can_disable_user_enabled_path() {
+             entries: vec![SkillConfigRule {
+                 selector: SkillConfigRuleSelector::Path(skill_path.abs()),
+                 enabled: false,
++                allow_implicit_invocation: None,
+             }],
+         }
+     );
+@@ -140,6 +180,7 @@ enabled = false
+             entries: vec![SkillConfigRule {
+                 selector: SkillConfigRuleSelector::Name("github:yeet".to_string()),
+                 enabled: false,
++                allow_implicit_invocation: None,
+             }],
+         }
+     );
+@@ -165,11 +206,13 @@ enabled = true
+             entries: vec![
+                 SkillConfigRule {
+                     selector: SkillConfigRuleSelector::Path(skill_path.abs()),
+                     enabled: false,
++                    allow_implicit_invocation: None,
+                 },
+                 SkillConfigRule {
+                     selector: SkillConfigRuleSelector::Name("github:yeet".to_string()),
+                     enabled: true,
++                    allow_implicit_invocation: None,
+                 },
+             ],
+         }
+@@ -183,6 +226,7 @@ fn path_rule_disables_selected_path() {
+         entries: vec![SkillConfigRule {
+             selector: SkillConfigRuleSelector::Path(path.clone()),
+             enabled: false,
++            allow_implicit_invocation: None,
+         }],
+     };
+
+@@ -201,11 +245,13 @@ fn later_name_rule_reenables_path_disabled_skill() {
+         entries: vec![
+             SkillConfigRule {
+                 selector: SkillConfigRuleSelector::Path(path.clone()),
+                 enabled: false,
++                allow_implicit_invocation: Some(false),
+             },
+             SkillConfigRule {
+                 selector: SkillConfigRuleSelector::Name("demo".to_string()),
+                 enabled: true,
++                allow_implicit_invocation: None,
+             },
+         ],
+     };
+@@ -216,5 +262,9 @@ fn later_name_rule_reenables_path_disabled_skill() {
+         Default::default()
+     );
++    assert_eq!(
++        rules.resolve_allow_implicit_invocation("demo", &path),
++        Some(false)
++    );
+ }
+
+ #[test]
+@@ -226,11 +276,13 @@ fn later_path_rule_reenables_one_skill_disabled_by_name() {
+         entries: vec![
+             SkillConfigRule {
+                 selector: SkillConfigRuleSelector::Name("demo".to_string()),
+                 enabled: false,
++                allow_implicit_invocation: None,
+             },
+             SkillConfigRule {
+                 selector: SkillConfigRuleSelector::Path(first_path.clone()),
+                 enabled: true,
++                allow_implicit_invocation: None,
+             },
+         ],
+     };
 diff --git a/config/src/types_tests.rs b/config/src/types_tests.rs
 index 2c3f69d..88af22f 100644
 --- a/config/src/types_tests.rs
@@ -381,119 +549,31 @@ diff --git a/core-plugins/src/loader.rs b/core-plugins/src/loader.rs
 index c1ddf91..a110afc 100644
 --- a/core-plugins/src/loader.rs
 +++ b/core-plugins/src/loader.rs
-@@ -30,6 +30,7 @@ use codex_config::types::PluginMcpServerConfig;
- use codex_connectors::parse_plugin_app_config;
- use codex_connectors::parse_plugin_app_config_value;
- use codex_core_skills::PluginSkillSnapshots;
-+use codex_core_skills::config_rules::apply_implicit_invocation_overrides;
- use codex_core_skills::config_rules::resolve_disabled_skill_paths;
- use codex_core_skills::config_rules::skill_config_rules_from_stack;
- use codex_core_skills::loader::SkillRoot;
-@@ -983,7 +984,8 @@ impl PluginSkillInventory {
-         )
-     }
-
+@@ -986,12 +986,22 @@ impl PluginSkillInventory {
 -    pub(crate) fn resolve(self, skill_config_rules: &SkillConfigRules) -> ResolvedPluginSkills {
 +    pub(crate) fn resolve(mut self, skill_config_rules: &SkillConfigRules) -> ResolvedPluginSkills {
-+        apply_implicit_invocation_overrides(&mut self.skills, skill_config_rules);
-         let disabled_skill_paths = resolve_disabled_skill_paths(&self.skills, skill_config_rules);
++        for skill in &mut self.skills {
++            if let Some(allow_implicit_invocation) = skill_config_rules
++                .resolve_allow_implicit_invocation(&skill.name, &skill.path_to_skills_md)
++            {
++                skill
++                    .policy
++                    .get_or_insert_default()
++                    .allow_implicit_invocation = Some(allow_implicit_invocation);
++            }
++        }
+         let disabled_skill_paths = skill_config_rules.resolve_disabled_paths(
+             self.skills
+                 .iter()
+                 .map(|skill| (skill.name.as_str(), &skill.path_to_skills_md)),
+         );
          ResolvedPluginSkills {
              skills: self.skills,
-diff --git a/core-skills/src/config_rules.rs b/core-skills/src/config_rules.rs
-index 064dd0f..a42d559 100644
---- a/core-skills/src/config_rules.rs
-+++ b/core-skills/src/config_rules.rs
-@@ -5,6 +5,7 @@ use codex_config::SkillsConfig;
- pub use codex_skills::SkillConfigRule;
- pub use codex_skills::SkillConfigRuleSelector;
- pub use codex_skills::SkillConfigRules;
-+use codex_skills::SkillMetadata;
- pub use codex_skills::resolve_disabled_skill_paths;
- use tracing::warn;
-
-@@ -35,10 +36,17 @@ pub fn skill_config_rules_from_stack(config_layer_stack: &ConfigLayerStack) -> S
-             };
-             // Preserve layer order so a later name selector can override an earlier path selector
-             // for the same loaded skill.
-+            let inherited_allow_implicit_invocation = entries
-+                .iter()
-+                .find(|entry: &&SkillConfigRule| entry.selector == selector)
-+                .and_then(|entry| entry.allow_implicit_invocation);
-             entries.retain(|entry: &SkillConfigRule| entry.selector != selector);
-             entries.push(SkillConfigRule {
-                 selector,
-                 enabled: entry.enabled,
-+                allow_implicit_invocation: entry
-+                    .allow_implicit_invocation
-+                    .or(inherited_allow_implicit_invocation),
-             });
+             disabled_skill_paths,
+             had_errors: self.had_errors,
          }
      }
-@@ -46,6 +54,23 @@ pub fn skill_config_rules_from_stack(config_layer_stack: &ConfigLayerStack) -> S
-     SkillConfigRules { entries }
  }
-
-+pub fn apply_implicit_invocation_overrides(skills: &mut [SkillMetadata], rules: &SkillConfigRules) {
-+    for entry in &rules.entries {
-+        let Some(allow_implicit_invocation) = entry.allow_implicit_invocation else {
-+            continue;
-+        };
-+        for skill in skills.iter_mut().filter(|skill| match &entry.selector {
-+            SkillConfigRuleSelector::Path(path) => skill.path_to_skills_md == *path,
-+            SkillConfigRuleSelector::Name(name) => skill.name == *name,
-+        }) {
-+            skill
-+                .policy
-+                .get_or_insert_default()
-+                .allow_implicit_invocation = Some(allow_implicit_invocation);
-+        }
-+    }
-+}
-+
- fn skill_config_rule_selector(entry: &SkillConfig) -> Option<SkillConfigRuleSelector> {
-     match (entry.path.as_ref(), entry.name.as_deref()) {
-         (Some(path), None) => Some(SkillConfigRuleSelector::Path(
-diff --git a/core-skills/src/config_rules_tests.rs b/core-skills/src/config_rules_tests.rs
-index 82fcb2c..b75e561 100644
---- a/core-skills/src/config_rules_tests.rs
-+++ b/core-skills/src/config_rules_tests.rs
-@@ -66,6 +66,7 @@ fn session_flags_can_reenable_user_disabled_path() {
-             entries: vec![SkillConfigRule {
-                 selector: SkillConfigRuleSelector::Path(skill_path.abs()),
-                 enabled: true,
-+                allow_implicit_invocation: None,
-             }],
-         }
-     );
-@@ -87,6 +88,7 @@ fn session_flags_can_disable_user_enabled_path() {
-             entries: vec![SkillConfigRule {
-                 selector: SkillConfigRuleSelector::Path(skill_path.abs()),
-                 enabled: false,
-+                allow_implicit_invocation: None,
-             }],
-         }
-     );
-@@ -110,6 +112,7 @@ enabled = false
-             entries: vec![SkillConfigRule {
-                 selector: SkillConfigRuleSelector::Name("github:yeet".to_string()),
-                 enabled: false,
-+                allow_implicit_invocation: None,
-             }],
-         }
-     );
-@@ -136,10 +139,12 @@ enabled = true
-                 SkillConfigRule {
-                     selector: SkillConfigRuleSelector::Path(skill_path.abs()),
-                     enabled: false,
-+                    allow_implicit_invocation: None,
-                 },
-                 SkillConfigRule {
-                     selector: SkillConfigRuleSelector::Name("github:yeet".to_string()),
-                     enabled: true,
-+                    allow_implicit_invocation: None,
-                 },
-             ],
-         }
 diff --git a/core/src/config/edit.rs b/core/src/config/edit.rs
 index 35de852..2abd178 100644
 --- a/core/src/config/edit.rs
@@ -720,30 +800,34 @@ index 4e0b102..1bdd432 100644
  fn blocking_set_model_ignores_inline_legacy_profile_contents() {
      let tmp = tempdir().expect("tmpdir");
 diff --git a/ext/skills/src/host_service.rs b/ext/skills/src/host_service.rs
-index b759e99..0f2d277 100644
+index 40648db..20181aa 100644
 --- a/ext/skills/src/host_service.rs
 +++ b/ext/skills/src/host_service.rs
-@@ -25,6 +25,7 @@ use codex_core_skills::PluginSkillSnapshots;
- use codex_core_skills::SkillError;
- use codex_core_skills::SkillLoadOutcome;
- use codex_core_skills::config_rules::SkillConfigRules;
-+use codex_core_skills::config_rules::apply_implicit_invocation_overrides;
- use codex_core_skills::config_rules::resolve_disabled_skill_paths;
- use codex_core_skills::config_rules::skill_config_rules_from_stack;
- use codex_core_skills::loader::MAX_CONCURRENT_ROOT_SCANS;
-@@ -337,10 +338,11 @@ impl HostSkillsService {
-                 .map(|(_, snapshot)| snapshot)
-                 .collect(),
-         );
--        let outcome = codex_core_skills::filter_skill_load_outcome_for_product(
-+        let mut outcome = codex_core_skills::filter_skill_load_outcome_for_product(
-             outcome,
+@@ -347,7 +347,7 @@ impl HostSkillsService {
+         skill_config_rules: &SkillConfigRules,
+         request_root_snapshots: Option<&RequestSkillRootSnapshots>,
+     ) -> SkillLoadOutcome {
+-        let outcome = load_and_merge_host_skill_roots_with_request_snapshots(
++        let mut outcome = load_and_merge_host_skill_roots_with_request_snapshots(
+             roots,
+             &self.root_scan_slots,
              self.restriction_product,
-         );
-+        apply_implicit_invocation_overrides(&mut outcome.skills, skill_config_rules);
-         let disabled_paths = resolve_disabled_skill_paths(&outcome.skills, skill_config_rules);
-         outcome.with_disabled_paths(disabled_paths)
-     }
+@@ -355,6 +355,15 @@ impl HostSkillsService {
+             request_root_snapshots,
+         )
+         .await;
++        for skill in &mut outcome.skills {
++            if let Some(allow_implicit_invocation) = skill_config_rules
++                .resolve_allow_implicit_invocation(&skill.name, &skill.path_to_skills_md)
++            {
++                skill.policy
++                    .get_or_insert_default()
++                    .allow_implicit_invocation = Some(allow_implicit_invocation);
++            }
++        }
+         let disabled_paths = skill_config_rules.resolve_disabled_paths(
+             outcome
+                 .skills
 diff --git a/ext/skills/src/host_service_tests.rs b/ext/skills/src/host_service_tests.rs
 index 2c5559d..0681214 100644
 --- a/ext/skills/src/host_service_tests.rs
@@ -804,56 +888,6 @@ index 2c5559d..0681214 100644
 +    assert!(outcome.is_skill_enabled(skill));
 +    assert!(!skill.allows_implicit_invocation());
 +}
-diff --git a/skills/src/model.rs b/skills/src/model.rs
-index 977decd..d7c312e 100644
---- a/skills/src/model.rs
-+++ b/skills/src/model.rs
-@@ -102,6 +102,7 @@ pub enum SkillConfigRuleSelector {
- pub struct SkillConfigRule {
-     pub selector: SkillConfigRuleSelector,
-     pub enabled: bool,
-+    pub allow_implicit_invocation: Option<bool>,
- }
-
- #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
-diff --git a/skills/src/policy_tests.rs b/skills/src/policy_tests.rs
-index da12021..0c4c166 100644
---- a/skills/src/policy_tests.rs
-+++ b/skills/src/policy_tests.rs
-@@ -35,6 +35,7 @@ fn path_rule_disables_selected_path() {
-         entries: vec![SkillConfigRule {
-             selector: SkillConfigRuleSelector::Path(path.clone()),
-             enabled: false,
-+            allow_implicit_invocation: None,
-         }],
-     };
-
-@@ -53,10 +54,12 @@ fn later_name_rule_reenables_path_disabled_skill() {
-             SkillConfigRule {
-                 selector: SkillConfigRuleSelector::Path(path),
-                 enabled: false,
-+                allow_implicit_invocation: None,
-             },
-             SkillConfigRule {
-                 selector: SkillConfigRuleSelector::Name("demo".to_string()),
-                 enabled: true,
-+                allow_implicit_invocation: None,
-             },
-         ],
-     };
-@@ -81,10 +84,12 @@ fn later_path_rule_reenables_one_skill_disabled_by_name() {
-             SkillConfigRule {
-                 selector: SkillConfigRuleSelector::Name("demo".to_string()),
-                 enabled: false,
-+                allow_implicit_invocation: None,
-             },
-             SkillConfigRule {
-                 selector: SkillConfigRuleSelector::Path(first_path),
-                 enabled: true,
-+                allow_implicit_invocation: None,
-             },
-         ],
-     };
 diff --git a/tui/src/bottom_pane/chat_composer.rs b/tui/src/bottom_pane/chat_composer.rs
 index 9574b61..f41f547 100644
 --- a/tui/src/bottom_pane/chat_composer.rs

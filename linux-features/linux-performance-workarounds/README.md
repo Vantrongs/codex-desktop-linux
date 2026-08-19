@@ -16,13 +16,13 @@ index instead of replaying the displayed history. The rail is withheld until
 the complete index is available, and a selected prompt/answer preview is loaded
 from indexed storage only when needed.
 
-Legacy root threads can be converted once with the app-server's atomic rollout
+Legacy root threads can be converted once with the official CLI's atomic rollout
 migrator. Inspection is the default; `--apply` is explicit and selection can be
 limited to a single thread:
 
 ```bash
-codex app-server migrate-rollouts --thread-id THREAD_UUID
-codex app-server migrate-rollouts --thread-id THREAD_UUID --apply --max-mib-per-second 32
+codex migrate-rollouts --thread THREAD_UUID
+codex migrate-rollouts --thread THREAD_UUID --apply --max-mib-per-second 32
 ```
 
 The migrator plans legacy rollback markers by logical instruction turn,
