@@ -34,10 +34,10 @@ and the button keeps its previous state.
 
 The companion CLI patch at
 `patches/codex/skill-invocation-policy.patch` applies the persisted policy to
-both plugin Skills and the host Skill service. Codex CLI 0.147.0 moved that service from
-`core-skills` to `ext/skills`; the patch follows the new source-of-truth path
-and preserves an existing policy when a later config layer changes only the
-enabled state.
+both plugin Skills and the host Skill service. Codex CLI 0.148.0 centralizes
+effective Skill rules in `codex-config`; the patch follows that source of truth
+for both loaders and preserves an existing policy when a later config layer
+changes only the enabled state.
 
 ## Enable for a regular build
 
