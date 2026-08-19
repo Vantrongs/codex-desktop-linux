@@ -14,7 +14,8 @@ const IDENTIFIER = "[A-Za-z_$][\\w$]*";
 
 const PROJECTION_BUILDER_PATTERN = new RegExp(
   `function (${IDENTIFIER})\\(\\{cachedConversations:(${IDENTIFIER}),` +
-    `conversationTurns:(${IDENTIFIER}),getThreadRuntimeStatusEvidence:(${IDENTIFIER}),` +
+    `conversationTurns:(${IDENTIFIER}),(?:getIndexedSubagentItems:${IDENTIFIER},` +
+    `getIndexedSubagentProgress:${IDENTIFIER},)?getThreadRuntimeStatusEvidence:(${IDENTIFIER}),` +
     `parentConversationId:(${IDENTIFIER}),sourceLinkedThreads:(${IDENTIFIER}),` +
     `threadSummaries:(${IDENTIFIER})=\\[\\]\\}\\)\\{`,
   "gu",
@@ -22,7 +23,7 @@ const PROJECTION_BUILDER_PATTERN = new RegExp(
 const PROJECTION_PATTERN = new RegExp(
   `function (${IDENTIFIER})\\(\\{membership:(${IDENTIFIER}),` +
     `latestReference:(${IDENTIFIER}),childConversation:(${IDENTIFIER}),` +
-    `currentParentTurnKey:(${IDENTIFIER}),inProgressParentTurnKeys:(${IDENTIFIER}),` +
+    `currentParentTurnKey:(${IDENTIFIER}),(?:inProgressParentTurnKeys|parentTurnsByKey):(${IDENTIFIER}),` +
     `runtimeStatus:(${IDENTIFIER})\\}\\)\\{`,
   "gu",
 );

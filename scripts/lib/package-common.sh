@@ -158,6 +158,7 @@ stage_update_builder_linux_features_tree() {
 
     mkdir -p "$target"
     cp "$source_root/features.example.json" "$target/features.example.json"
+    cp "$source_root/compatibility.json" "$target/compatibility.json"
 
     local feature_id
     while IFS= read -r feature_id; do
@@ -999,7 +1000,7 @@ stage_enabled_native_feature_artifacts() {
                     "$update_builder_root/target/release/codex-read-aloud-linux" \
                     "$feature_id backend"
                 ;;
-            record-and-replay)
+            chronicle-skysight)
                 stage_update_builder_native_artifact \
                     "$APP_DIR/resources/native/codex-record-replay-linux" \
                     "$update_builder_root/target/release/codex-record-replay-linux" \

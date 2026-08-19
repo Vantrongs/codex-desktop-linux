@@ -37,7 +37,17 @@ function skillInvocationComposerRuntimeSource() {
   );
 }
 
-function skillInvocationPolicyRuntimeSource({ reactVar, jsxVar, bridgeVar }) {
+function skillInvocationPolicyRuntimeSource({
+  reactVar,
+  jsxVar,
+  bridgeVar,
+  requestClientProp = false,
+}) {
+  const requestTarget = requestClientProp ? "b.sendRequest" : bridgeVar;
+  const requestMethod = requestClientProp
+    ? "skills/config/write"
+    : "write-skill-config";
+  const hostPayload = requestClientProp ? "" : "hostId:t,";
   return [
     `const ${PATCH_MARKER}=!0,` +
       `codexLinuxSkillInvocationPolicyValues=new Map,` +
@@ -45,11 +55,11 @@ function skillInvocationPolicyRuntimeSource({ reactVar, jsxVar, bridgeVar }) {
     `function codexLinuxSkillInvocationPolicyKey(e,t){let n=t?.name?.includes(\`:\`)?t.name:t?.path??t?.name??\`unknown\`;return String(e??\`local\`)+\`:\`+String(n)}`,
     `function codexLinuxBroadcastSkillInvocationPolicy(e,t){for(let n of codexLinuxSkillInvocationPolicyListeners.get(e)??[])n(t)}`,
     `function codexLinuxPublishSkillInvocationPolicy(e,t,n){codexLinuxSkillInvocationPolicyValues.set(e,{value:t,observedMetadata:n}),codexLinuxBroadcastSkillInvocationPolicy(e,t)}`,
-    `function ${COMPONENT_NAME}(e){let{hostId:t,skill:n,enabled:r,isUpdating:i,onUpdated:a}=e,o=codexLinuxSkillInvocationPolicyKey(t,n),s=n?.allowImplicitInvocation!==!1,[c,l]=(0,${reactVar}.useState)(()=>codexLinuxSkillInvocationPolicyValues.get(o)?.value??s),[u,d]=(0,${reactVar}.useState)(!1),[f,p]=(0,${reactVar}.useState)(null);(0,${reactVar}.useEffect)(()=>{let e=codexLinuxSkillInvocationPolicyListeners.get(o);e||(e=new Set,codexLinuxSkillInvocationPolicyListeners.set(o,e)),e.add(l);let t=codexLinuxSkillInvocationPolicyValues.get(o);return t==null?l(s):s!==t.observedMetadata&&(codexLinuxSkillInvocationPolicyValues.delete(o),codexLinuxBroadcastSkillInvocationPolicy(o,s)),()=>{e.delete(l),e.size===0&&codexLinuxSkillInvocationPolicyListeners.delete(o)}},[o,s]);if(n?.path==null)return null;let m=c===!1,h=u||i,g=h?\`Updating skill invocation policy\`:f??(m?\`Manual only — invoke with !\${n?.name??\`skill\`}; the model will not choose it automatically\`:\`Allow only manual invocation\`),y=m?\`Manual only: \${n?.name??\`skill\`}\`:\`Automatic skill selection allowed: \${n?.name??\`skill\`}\`;return(0,${jsxVar}.jsx)(\`button\`,{type:\`button\`,title:g,\"aria-label\":y,\"aria-pressed\":m,disabled:!r||h,className:\`h-token-button-composer min-w-7 rounded-md border border-token-border-default bg-transparent px-2 text-xs font-semibold text-token-text-secondary focus-visible:opacity-100 \${m?\`opacity-100\`:\`opacity-50 hover:opacity-100\`}\`,onClick:async e=>{e.preventDefault(),e.stopPropagation();if(!r||h)return;d(!0),p(null);let i=!c;try{let e=await ${bridgeVar}(\`write-skill-config\`,n?.name?.includes(\`:\`)?{hostId:t,name:n.name,enabled:r,allowImplicitInvocation:i}:{hostId:t,path:n?.path,enabled:r,allowImplicitInvocation:i});if(e?.success===!1)throw Error(\`Skill invocation policy update failed\`);codexLinuxPublishSkillInvocationPolicy(o,i,s),a?.(!0)}catch(e){p(\`Failed to update skill invocation policy\`)}finally{d(!1)}},children:m?\`!\`:\`A\`})}`,
+    `function ${COMPONENT_NAME}(e){let{hostId:t,skill:n,enabled:r,isUpdating:i,onUpdated:a${requestClientProp ? ",requestClient:b" : ""}}=e,o=codexLinuxSkillInvocationPolicyKey(t,n),s=n?.allowImplicitInvocation!==!1,[c,l]=(0,${reactVar}.useState)(()=>codexLinuxSkillInvocationPolicyValues.get(o)?.value??s),[u,d]=(0,${reactVar}.useState)(!1),[f,p]=(0,${reactVar}.useState)(null);(0,${reactVar}.useEffect)(()=>{let e=codexLinuxSkillInvocationPolicyListeners.get(o);e||(e=new Set,codexLinuxSkillInvocationPolicyListeners.set(o,e)),e.add(l);let t=codexLinuxSkillInvocationPolicyValues.get(o);return t==null?l(s):s!==t.observedMetadata&&(codexLinuxSkillInvocationPolicyValues.delete(o),codexLinuxBroadcastSkillInvocationPolicy(o,s)),()=>{e.delete(l),e.size===0&&codexLinuxSkillInvocationPolicyListeners.delete(o)}},[o,s]);if(n?.path==null)return null;let m=c===!1,h=u||i,g=h?\`Updating skill invocation policy\`:f??(m?\`Manual only — invoke with !\${n?.name??\`skill\`}; the model will not choose it automatically\`:\`Allow only manual invocation\`),y=m?\`Manual only: \${n?.name??\`skill\`}\`:\`Automatic skill selection allowed: \${n?.name??\`skill\`}\`;return(0,${jsxVar}.jsx)(\`button\`,{type:\`button\`,title:g,\"aria-label\":y,\"aria-pressed\":m,disabled:!r||h,className:\`h-token-button-composer min-w-7 rounded-md border border-token-border-default bg-transparent px-2 text-xs font-semibold text-token-text-secondary focus-visible:opacity-100 \${m?\`opacity-100\`:\`opacity-50 hover:opacity-100\`}\`,onClick:async e=>{e.preventDefault(),e.stopPropagation();if(!r||h)return;d(!0),p(null);let i=!c;try{let e=await ${requestTarget}(\`${requestMethod}\`,n?.name?.includes(\`:\`)?{${hostPayload}name:n.name,enabled:r,allowImplicitInvocation:i}:{${hostPayload}path:n?.path,enabled:r,allowImplicitInvocation:i});if(e?.success===!1)throw Error(\`Skill invocation policy update failed\`);codexLinuxPublishSkillInvocationPolicy(o,i,s),a?.(!0)}catch(e){p(\`Failed to update skill invocation policy\`)}finally{d(!1)}},children:m?\`!\`:\`A\`})}`,
   ].join("");
 }
 
-function findSkillCardBinding(source) {
+function findLegacySkillCardBinding(source) {
   const requestIndex = source.indexOf("`write-skill-config`");
   if (requestIndex < 0) {
     return null;
@@ -125,6 +135,79 @@ function findSkillCardBinding(source) {
   };
 }
 
+function findCurrentSkillCardBinding(source) {
+  const binding = findFunctionBlockContaining(source, "`skills/config/write`");
+  if (binding == null) return null;
+  const { block } = binding;
+  const propsMatch = block.match(
+    new RegExp(
+      `^function ${binding.name}\\(e\\)\\{let ${JS_IDENT}=\\(0,${JS_IDENT}\\.c\\)\\(\\d+\\),\\{([^{}]+)\\}=e,`,
+    ),
+  );
+  if (propsMatch == null) return null;
+  const propVar = (name) =>
+    propsMatch[1].match(new RegExp(`(?:^|,)${name}:(${JS_IDENT})(?:,|$)`))?.[1] ?? null;
+  const hostIdVar = propVar("hostId");
+  const skillVar = propVar("skill");
+  const onUpdatedVar = propVar("onSkillsUpdated");
+  const reactVar = block.match(new RegExp(`\\(0,(${JS_IDENT})\\.useState\\)\\(null\\)`))?.[1];
+  const jsxVar = block.match(new RegExp(`\\(0,(${JS_IDENT})\\.jsx\\)\\(`))?.[1];
+  if (
+    hostIdVar == null || skillVar == null || onUpdatedVar == null ||
+    reactVar == null || jsxVar == null
+  ) return null;
+
+  const requestMatch = block.match(
+    new RegExp(
+      `(${JS_IDENT})\\((${JS_IDENT}),${hostIdVar}\\)\\.sendRequest` +
+        "\\(`skills/config/write`,",
+    ),
+  );
+  const enabledMatch = block.match(
+    new RegExp(
+      `(${JS_IDENT})=(${JS_IDENT})!=null&&\\((${JS_IDENT})\\.isPending\\|\\|` +
+        `${skillVar}\\.enabled!==\\2\\)\\?\\2:${skillVar}\\.enabled`,
+    ),
+  );
+  if (requestMatch == null || enabledMatch == null) return null;
+
+  const modalAnchor = block.match(
+    new RegExp(
+      `${JS_IDENT}=e=>\\{let\\{closePreview:${JS_IDENT}\\}=e;` +
+        `return\\(0,${jsxVar}\\.jsxs\\)\\(` + "`div`" + `,\\{` +
+        "className:`flex items-center gap-2`,children:\\[",
+    ),
+  )?.[0] ?? null;
+  const cardAnchor = block.match(
+    new RegExp(
+      `${JS_IDENT}===` + "`toggle`" + `\\?e=>\\{` +
+        `let\\{ignoreNextPreview:${JS_IDENT},openPreview:${JS_IDENT}\\}=e;` +
+        `return\\(0,${jsxVar}\\.jsxs\\)\\(` + "`div`" + `,\\{` +
+        "className:`flex items-center gap-2`,children:\\[",
+    ),
+  )?.[0] ?? null;
+  if (modalAnchor == null || cardAnchor == null) return null;
+
+  return {
+    block,
+    enabledVar: enabledMatch[1],
+    end: binding.end,
+    hostIdVar,
+    insertionAnchors: [modalAnchor, cardAnchor],
+    jsxVar,
+    mutationVar: enabledMatch[3],
+    onUpdatedVar,
+    reactVar,
+    requestClientExpression: `${requestMatch[1]}(${requestMatch[2]},${hostIdVar})`,
+    skillVar,
+    start: binding.start,
+  };
+}
+
+function findSkillCardBinding(source) {
+  return findLegacySkillCardBinding(source) ?? findCurrentSkillCardBinding(source);
+}
+
 function applySkillInvocationPolicyPatch(source) {
   if (source.includes(PATCH_MARKER)) {
     if (hasInstalledSkillInvocationPolicy(source)) {
@@ -147,13 +230,35 @@ function applySkillInvocationPolicyPatch(source) {
     mutationVar,
     onUpdatedVar,
     reactVar,
+    requestClientExpression,
     skillVar,
     start,
     end,
   } = binding;
   const manualButton =
     `(0,${jsxVar}.jsx)(${COMPONENT_NAME},{hostId:${hostIdVar},skill:${skillVar},` +
-    `enabled:${enabledVar},isUpdating:${mutationVar}.isPending,onUpdated:${onUpdatedVar}})`;
+    `enabled:${enabledVar},isUpdating:${mutationVar}.isPending,onUpdated:${onUpdatedVar}` +
+    `${requestClientExpression == null ? "" : `,requestClient:${requestClientExpression}`}})`;
+
+  if (binding.insertionAnchors != null) {
+    let patchedBlock = block;
+    for (const anchor of binding.insertionAnchors) {
+      patchedBlock = replaceExactlyOnce(
+        patchedBlock,
+        anchor,
+        `${anchor}${manualButton},`,
+      );
+      if (patchedBlock == null) {
+        throw new Error("Current Skill policy action anchor was not unique");
+      }
+    }
+    const runtime = skillInvocationPolicyRuntimeSource({
+      reactVar,
+      jsxVar,
+      requestClientProp: true,
+    });
+    return `${source.slice(0, start)}${runtime}${patchedBlock}${source.slice(end)}`;
+  }
 
   const headerPattern = new RegExp(
     `children:\\[(${JS_IDENT}),(${JS_IDENT})\\]`,
@@ -270,20 +375,30 @@ function hasInstalledSkillInvocationPolicy(source) {
   const bridgeVar = component.match(
     new RegExp("(" + JS_IDENT + ")\\(`write-skill-config`,", "u"),
   )?.[1];
+  const requestClientVar = component.match(
+    new RegExp(`requestClient:(${JS_IDENT})`, "u"),
+  )?.[1];
   const jsxVar = component.match(
     new RegExp(`\\(0,(${JS_IDENT})\\.jsx\\)\\(`, "u"),
   )?.[1];
   const reactVar = component.match(
     new RegExp(`\\(0,(${JS_IDENT})\\.useState\\)\\(`, "u"),
   )?.[1];
-  if (bridgeVar == null || jsxVar == null || reactVar == null) {
+  if ((bridgeVar == null) === (requestClientVar == null) || jsxVar == null || reactVar == null) {
     return false;
   }
-  const runtime = skillInvocationPolicyRuntimeSource({ bridgeVar, jsxVar, reactVar });
+  const runtime = skillInvocationPolicyRuntimeSource({
+    bridgeVar,
+    jsxVar,
+    reactVar,
+    requestClientProp: requestClientVar != null,
+  });
   const callPattern = new RegExp(
     `\\(0,${JS_IDENT}\\.jsx\\)\\(${COMPONENT_NAME},\\{hostId:${JS_IDENT},` +
       `skill:${JS_IDENT},enabled:${JS_IDENT},isUpdating:${JS_IDENT}\\.isPending,` +
-      `onUpdated:${JS_IDENT}\\}\\)`,
+      `onUpdated:${JS_IDENT}` +
+      `${requestClientVar == null ? "" : `,requestClient:${JS_IDENT}\\(${JS_IDENT},${JS_IDENT}\\)`}` +
+      `\\}\\)`,
     "gu",
   );
   const calls = [...source.matchAll(callPattern)].map((match) => match[0]);
@@ -301,10 +416,15 @@ function hasInstalledSkillInvocationRegistration(source) {
 }
 
 function hasInstalledSkillInvocationTrigger(source) {
+  const installedValidation = new RegExp(
+    `(${JS_IDENT})!==` + "`\\$`(?:&&\\1!==`>`)?&&\\1!==`!`",
+    "u",
+  );
   return countOccurrences(source, COMPOSER_TRIGGER_PATCH_MARKER) === 1 &&
-    source.includes("([/@$!])") &&
-    source.includes("o!==`$`&&o!==`!`") &&
-    !source.includes("([/@$])");
+    (source.includes("([/@$!])") || source.includes("([/@$>!])")) &&
+    installedValidation.test(source) &&
+    !source.includes("([/@$])") &&
+    !source.includes("([/@$>])");
 }
 
 function hasInstalledSkillInvocationComposerUi(source) {
@@ -354,20 +474,20 @@ function applySkillInvocationComposerTriggerPatch(source) {
     }
     throw new Error("Found partial manual Skill trigger parser markers");
   }
-  if (!source.includes("nodeBefore?.text") || !source.includes("[/@$]")) {
+  if (
+    !source.includes("nodeBefore?.text") ||
+    (!source.includes("[/@$]") && !source.includes("[/@$>]"))
+  ) {
     return source;
   }
 
+  const hasBrowserTrigger = source.includes("[/@$>]");
+  const triggerChars = hasBrowserTrigger ? "/@$>" : "/@$";
   const replacements = [
     [
-      "/(?:^|\\s)([/@$])([\\p{L}\\p{N}\\p{M}.:_/\\\\-]*)$/u",
-      `/*${COMPOSER_TRIGGER_PATCH_MARKER}*//(?:^|\\s)([/@$!])([\\p{L}\\p{N}\\p{M}.:_/\\\\-]*)$/u`,
+      `/(?:^|\\s)([${triggerChars}])([\\p{L}\\p{N}\\p{M}.:_/\\\\-]*)$/u`,
+      `/*${COMPOSER_TRIGGER_PATCH_MARKER}*//(?:^|\\s)([${triggerChars}!])([\\p{L}\\p{N}\\p{M}.:_/\\\\-]*)$/u`,
       "composer trigger parser",
-    ],
-    [
-      's==null||o!==`/`&&o!==`@`&&o!==`$`',
-      's==null||o!==`/`&&o!==`@`&&o!==`$`&&o!==`!`',
-      "composer trigger validation",
     ],
   ];
 
@@ -382,6 +502,20 @@ function applySkillInvocationComposerTriggerPatch(source) {
     }
     patched = next;
   }
+  const validationPattern = new RegExp(
+    `(${JS_IDENT})==null\\|\\|(${JS_IDENT})!==` + "`/`&&\\2!==`@`&&" +
+      `\\2!==` + "`\\$`" + (hasBrowserTrigger ? "&&\\2!==`>`" : ""),
+    "u",
+  );
+  const validationMatches = [...patched.matchAll(new RegExp(validationPattern.source, "gu"))];
+  if (validationMatches.length !== 1) {
+    warn(`Could not resolve the current composer trigger validation (matches: ${validationMatches.length})`);
+    return source;
+  }
+  patched = patched.replace(
+    validationPattern,
+    () => `${validationMatches[0][0]}&&${validationMatches[0][2]}!==\`!\``,
+  );
   return patched;
 }
 
@@ -557,6 +691,8 @@ function applySkillInvocationComposerPatch(source) {
     !source.includes(COMPOSER_REGISTRATION_PATCH_MARKER) &&
     source.includes('$:`skill-mention`');
   const expectsTrigger = source.includes("nodeBefore?.text") && source.includes("[/@$]");
+  const expectsCurrentTrigger =
+    source.includes("nodeBefore?.text") && source.includes("[/@$>]");
   const expectsUi = source.includes("composer.skillMentionList.noResults");
   let patched = source;
 
@@ -566,7 +702,7 @@ function applySkillInvocationComposerPatch(source) {
       throw new Error("Could not install manual Skill trigger registration");
     }
   }
-  if (expectsTrigger) {
+  if (expectsTrigger || expectsCurrentTrigger) {
     patched = applySkillInvocationComposerTriggerPatch(patched);
     if (!patched.includes(COMPOSER_TRIGGER_PATCH_MARKER)) {
       throw new Error("Could not install manual Skill trigger parser");
@@ -608,7 +744,9 @@ const descriptors = [
     order: 20_680,
     ciPolicy: "opt-in",
     pattern: /^plugin-detail-page-.*\.js$/,
-    assetMatch: (source) => source.includes("`write-skill-config`"),
+    assetMatch: (source) =>
+      source.includes("`write-skill-config`") ||
+      source.includes("`skills/config/write`"),
     missingDescription: "shared plugin detail and installed Skill card webview bundle",
     skipDescription: "Skill invocation policy UI patch",
     requiredMarkers: [PATCH_MARKER],
@@ -638,7 +776,8 @@ const descriptors = [
     ciPolicy: "opt-in",
     pattern: /^app-initial(?:~artifact-tab-content\.electron~app-main~.*|-[A-Za-z0-9_-]+)\.js$/,
     assetMatch: (source) =>
-      source.includes("nodeBefore?.text") && source.includes("[/@$]"),
+      source.includes("nodeBefore?.text") &&
+      (source.includes("[/@$]") || source.includes("[/@$>]")),
     missingDescription: "Skill composer trigger-parser webview bundle",
     skipDescription: "manual-only Skill composer trigger parser patch",
     requiredMarkers: [COMPOSER_TRIGGER_PATCH_MARKER],

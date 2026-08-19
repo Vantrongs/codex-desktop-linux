@@ -36,15 +36,15 @@ function matchesRetentionContract(source, retentionIndex) {
   const retentionClass = remainder.slice(0, classEnd.index + classEnd[0].length);
   const id = IDENTIFIER;
   const inactivityGuardPattern = new RegExp(
-    `(${id})==null\\|\\|\\1\\.resumeState!==` +
+    `(?:(${id})==null\\|\\|\\1\\.resumeState|(${id})\\?\\.resumeState)!==` +
       "`resumed`" +
       `\\|\\|this\\.params\\.streamState\\.getStreamRole\\((${id})\\)` +
       `\\?\\.role!==` +
       "`owner`" +
-      `\\|\\|this\\.hasActiveConversationView\\(\\2\\)` +
-      `\\|\\|this\\.params\\.streamState\\.hasFollowersOrPendingFollowerReconnect\\(\\2\\)` +
-      `(?:\\|\\|this\\.unsubscribingConversationIds\\.has\\(\\2\\))?` +
-      `\\|\\|this\\.shouldKeepConversationLoaded\\(\\1\\)\\)continue`,
+      `\\|\\|this\\.hasActiveConversationView\\(\\3\\)` +
+      `\\|\\|this\\.params\\.streamState\\.hasFollowersOrPendingFollowerReconnect\\(\\3\\)` +
+      `(?:\\|\\|this\\.unsubscribingConversationIds\\.has\\(\\3\\))?` +
+      `\\|\\|this\\.shouldKeepConversationLoaded\\((${id})\\)\\)continue`,
     "gu",
   );
   const safeClearPattern = new RegExp(
@@ -66,7 +66,9 @@ function matchesRetentionContract(source, retentionIndex) {
     retentionClass.includes("this.shouldKeepConversationLoaded(") &&
     retentionClass.includes("waitingOnApproval") &&
     retentionClass.includes("waitingOnUserInput") &&
-    [...retentionClass.matchAll(inactivityGuardPattern)].length === 2 &&
+    [...retentionClass.matchAll(inactivityGuardPattern)].filter((match) =>
+      (match[1] ?? match[2]) === match[4]
+    ).length === 2 &&
     safeClearPattern.test(retentionClass) &&
     new RegExp(`${IDENTIFIER}\\(${IDENTIFIER},\\[\\],!1\\)`, "u").test(
       retentionClass,

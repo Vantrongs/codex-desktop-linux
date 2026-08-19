@@ -44,6 +44,20 @@ function currentPluginDetailFixture() {
   ].join("");
 }
 
+function officialLinuxPluginDetailFixture() {
+  return [
+    "function wc(e){let{hostId:c}=e,D=scope;return Ee(D,c).sendRequest(`skills/config/write`,{path:`skill`,enabled:!0})}",
+    "function Vu(e){let t=(0,ld.c)(396),{allowUniqueNameFallback:n,hostId:r,pluginName:a,marketplacePath:o,parentPage:m}=e===void 0?{}:e,",
+    "_=vt(ue),y=mn(),b=Xt(),{accountId:x,userId:S}=He(),[ee,A]=(0,ud.useState)(null),U=r??route?.hostId??`local`,",
+    "{directMarketplacePath:Ee}=Ft({explicitMarketplacePath:o}),W=Ee??fallback?.marketplacePath??null,",
+    "{plugin:K,refetch:qt}=gi({hostId:U,marketplacePath:W,pluginName:a}),",
+    "jn=async()=>{await cd({hostId:U,marketplacePath:W,plugin:K,pluginName:a,refetchPluginDetail:qt})},Mn=(0,ud.useEffectEvent)(jn),",
+    "oa=Cr===K?.summary.id,sa=gr===K?.summary.id,Qi=icon;let Va=K!=null?(0,$.jsx)(Fs,{blockedReason:null,isInstalled:K.summary.installed,",
+    "isUninstalling:oa,isUpdatingEnabled:sa,pluginIcon:Qi==null?void 0:bi(Qi.icon),shareActions:null,onInstall:()=>{}}):null;return Va}",
+    "function next(){}",
+  ].join("");
+}
+
 function withTempDir(callback) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "plugin-update-button-"));
   try {
@@ -85,6 +99,7 @@ function runtimeButton({
   configError = null,
   installError = null,
   refreshError = null,
+  requestClientMode = false,
 } = {}) {
   const busyChanges = [];
   const calls = [];
@@ -118,14 +133,14 @@ function runtimeButton({
   };
   const bridge = async (method, payload) => {
     calls.push({ method, payload });
-    if (method === "read-config-for-host") {
+    if (method === "read-config-for-host" || method === "config/read") {
       if (configError != null) throw configError;
       return { config: { marketplaces: marketplace == null ? {} : { example: marketplace } } };
     }
-    if (method === "upgrade-marketplaces") {
+    if (method === "upgrade-marketplaces" || method === "marketplace/upgrade") {
       return upgradeResponse;
     }
-    if (method === "install-plugin" && installError != null) {
+    if ((method === "install-plugin" || method === "plugin/install") && installError != null) {
       throw installError;
     }
     return {};
@@ -134,6 +149,7 @@ function runtimeButton({
     bridgeVar: "bridge",
     jsxVar: "JsxRuntime",
     reactVar: "ReactRuntime",
+    requestClientProp: requestClientMode,
   });
   const component = Function(
     "ReactRuntime",
@@ -152,6 +168,7 @@ function runtimeButton({
       marketplacePath: "/tmp/example-marketplace",
       pluginName: "skills",
       pluginSource,
+      requestClient: { sendRequest: bridge },
       onBusyChange(value) {
         busyChanges.push(value);
       },
@@ -229,6 +246,22 @@ test("patches the Electron 42 React-compiled plugin detail component", () => {
   assert.match(patched, /onBusyChange:setCodexLinuxGitPluginUpdateBusyV1,onUpdated:Ht/);
 });
 
+test("patches the official Linux app-server plugin detail component", () => {
+  const source = officialLinuxPluginDetailFixture();
+  const patched = applyPluginUpdateButtonPatch(source);
+
+  assert.notEqual(patched, source);
+  assert.equal(applyPluginUpdateButtonPatch(patched), patched);
+  assert.match(patched, new RegExp(PATCH_MARKER));
+  assert.match(
+    patched,
+    /isUpdatingEnabled:sa,pluginIcon:Qi==null\?void 0:bi\(Qi\.icon\),shareActions:/,
+  );
+  assert.match(patched, /requestClient:Ee\(_,U\)/);
+  assert.match(patched, /v\.sendRequest\(`config\/read`,\{includeLayers:!1,cwd:null\}\)/);
+  assert.match(patched, /v\.sendRequest\(`plugin\/install`,\{marketplacePath:a,pluginName:o\}\)/);
+});
+
 test("patch fails closed when refetch belongs to a neighboring callback", () => {
   const source = currentPluginDetailFixture().replace(
     "Vt=async()=>{await uu({hostId:B,invalidateQueriesAndBroadcast:O,marketplacePath:U,pluginName:o,refetchPluginDetail:ft})},Ht=(0,fu.useEffectEvent)(Vt),",
@@ -296,6 +329,30 @@ test("local marketplace plus git-subdir plugin directly performs atomic reinstal
       method: "install-plugin",
       payload: {
         hostId: "local",
+        marketplacePath: "/tmp/example-marketplace",
+        pluginName: "skills",
+      },
+    },
+  ]);
+  assert.deepEqual(runtime.updates, [true]);
+  assert.deepEqual(runtime.busyChanges, [true, false]);
+});
+
+test("official app-server client performs the same local atomic reinstall", async () => {
+  const runtime = runtimeButton({ requestClientMode: true });
+  runtime.render();
+  await runtime.resolveDiscovery();
+  const button = runtime.render();
+  await button.props.onClick({ preventDefault() {}, stopPropagation() {} });
+
+  assert.deepEqual(runtime.calls, [
+    {
+      method: "config/read",
+      payload: { includeLayers: false, cwd: null },
+    },
+    {
+      method: "plugin/install",
+      payload: {
         marketplacePath: "/tmp/example-marketplace",
         pluginName: "skills",
       },

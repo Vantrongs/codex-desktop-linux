@@ -24,6 +24,28 @@ function job(workflow, jobName) {
 test("CI runs the complete workflow regression suite", () => {
   const workflow = read(".github/workflows/ci.yml");
   assert.match(workflow, /node --test scripts\/ci\/\*\.test\.js/);
+  const nixBuild = job(workflow, "nix-build");
+  assert.match(nixBuild, /system: x86_64-linux/);
+  assert.match(nixBuild, /system: aarch64-linux/);
+  assert.match(nixBuild, /runner: ubuntu-24\.04-arm/);
+  assert.match(nixBuild, /checks\.\$\{\{ matrix\.system \}\}\.modules/);
+  assert.match(nixBuild, /nix-runtime-chronicle-skysight/);
+  assert.match(nixBuild, /nix-runtime-computer-use/);
+  assert.match(nixBuild, /nix-runtime-maximal-directory-watch/);
+  assert.match(nixBuild, /nix-runtime-maximal-shallow-watch/);
+  assert.match(nixBuild, /nix-installer/);
+
+  const rust = job(workflow, "rust");
+  assert.match(rust, /cargo test -p codex-record-replay-linux/);
+  assert.match(rust, /cargo clippy -p codex-record-replay-linux --all-targets -- -D warnings/);
+
+  const nixVm = job(workflow, "nix-vm");
+  assert.match(nixVm, /checks\.x86_64-linux\.nixos-vm/);
+
+  const nixGate = job(workflow, "nix");
+  assert.match(nixGate, /if: \$\{\{ always\(\) \}\}/);
+  assert.match(nixGate, /test "\$NIX_BUILD_RESULT" = success/);
+  assert.match(nixGate, /test "\$NIX_VM_RESULT" = success/);
 });
 
 test("official Linux validation runs fully on every pull request but not hourly", () => {
@@ -31,7 +53,16 @@ test("official Linux validation runs fully on every pull request but not hourly"
   assert.doesNotMatch(workflow, /^  schedule:/m);
   assert.match(workflow, /^  pull_request:\s*\n  push:/m);
   assert.match(workflow, /^      - \.github\/workflows\/upstream-build-app\.yml$/m);
-  assert.match(job(workflow, "signed-baseline"), /architecture: \[amd64, arm64\]/);
+  const signedBaseline = job(workflow, "signed-baseline");
+  assert.match(signedBaseline, /architecture: \[amd64, arm64\]/);
+  assert.match(
+    signedBaseline,
+    /name: Validate the Nix ELF contract against the official payload[\s\S]*?env:\n          CODEX_INSTALL_DIR:.*matrix\.architecture[\s\S]*?nix\/elf-runtime\.cjs fix[\s\S]*?nix\/elf-runtime\.cjs audit/,
+  );
+  assert.match(
+    signedBaseline,
+    /nix\/elf-runtime\.cjs validate-upstream[\s\S]*?--root "\$CODEX_INSTALL_DIR"[\s\S]*?--arch "\$\{\{ matrix\.architecture \}\}"/,
+  );
 
   const packageMatrix = job(workflow, "package-matrix");
   assert.match(packageMatrix, /architecture: amd64/);
@@ -141,6 +172,7 @@ test("Nix pin refresh is watchdog-dispatched and campaign-bound", () => {
   assert.match(workflow, /dispatch_if_missing ci\.yml/);
   assert.match(workflow, /dispatch_if_missing upstream-build-app\.yml/);
   assert.match(workflow, /Official-Linux-Release-ID:/);
+  assert.match(workflow, /nix build \.#checks\.x86_64-linux\.nix-runtime --no-link/);
   assert.match(workflow, /--force-with-lease=refs\/heads\/\$branch:\$remote_head/);
   assert.match(workflow, /git rev-parse 'FETCH_HEAD\^\{tree\}'/);
   assert.match(workflow, /--head "\$GITHUB_REPOSITORY_OWNER:\$branch"/);

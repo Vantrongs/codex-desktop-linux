@@ -8,8 +8,8 @@ CODEX_LINUX_APP_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/$CODEX_LINUX_AP
 CODEX_LINUX_APP_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/$CODEX_LINUX_APP_ID"
 export CODEX_LINUX_APP_ID CODEX_LINUX_APP_DISPLAY_NAME CODEX_LINUX_APP_DIR
 export CODEX_LINUX_APP_STATE_DIR CODEX_LINUX_APP_CACHE_DIR
-export CHROME_DESKTOP="${CODEX_LINUX_APP_ID}.desktop"
-export BAMF_DESKTOP_FILE_HINT="/usr/share/applications/${CODEX_LINUX_APP_ID}.desktop"
+export CHROME_DESKTOP="${CHROME_DESKTOP:-${CODEX_LINUX_APP_ID}.desktop}"
+export BAMF_DESKTOP_FILE_HINT="${BAMF_DESKTOP_FILE_HINT:-/usr/share/applications/${CODEX_LINUX_APP_ID}.desktop}"
 
 HOOK_ROOT="$CODEX_LINUX_APP_DIR/.codex-linux"
 CHATGPT_BINARY="$CODEX_LINUX_APP_DIR/ChatGPT"
@@ -45,6 +45,40 @@ diagnose() {
             'warning: unprivileged user namespaces are disabled; install the native package AppArmor policy or enable user namespaces. The launcher will not disable Chromium sandboxing.' >&2
     fi
     return "$failed"
+}
+
+report_daily_usage() {
+    (
+        [ "${CODEX_LINUX_DISABLE_USAGE_REPORTING:-0}" != "1" ] || exit 0
+        command -v curl >/dev/null 2>&1 || exit 0
+
+        local report_day
+        local usage_state_dir="$CODEX_LINUX_APP_STATE_DIR/usage-reporting"
+
+        umask 077
+        report_day="$(date -u +%F)" || exit 0
+        mkdir -p "$usage_state_dir" || exit 0
+
+        # The per-day directory is an atomic, cross-process marker. Reserve the
+        # day before starting the request so even failed requests are attempted
+        # at most once and concurrent launches cannot report twice.
+        mkdir "$usage_state_dir/$report_day" || exit 0
+
+        # GoatCounter classifies missing, short, and HTTP-client User-Agents as
+        # bots. This fixed value carries no installation or system data; its
+        # stable space-and-slash shape only keeps the count out of that filter.
+        curl --disable \
+            --silent \
+            --fail \
+            --get \
+            --connect-timeout 2 \
+            --max-time 3 \
+            --output /dev/null \
+            --user-agent "ChatGPTCommunity/1 Usage" \
+            --data-urlencode "p=/app-launch" \
+            --data-urlencode "ns=1" \
+            "https://gary.goatcounter.com/count"
+    ) >/dev/null 2>&1 &
 }
 
 run_hook_directory() {
@@ -192,7 +226,7 @@ case "${1:-}" in
 esac
 [ -x "$CHATGPT_BINARY" ] || { printf 'ChatGPT executable is missing: %s\n' "$CHATGPT_BINARY" >&2; exit 1; }
 
-ELECTRON_ARGS=()
+ELECTRON_ARGS=("--class=$CODEX_LINUX_APP_ID")
 load_environment_hooks
 refresh_legacy_bundled_plugin_caches
 load_user_electron_args
@@ -207,6 +241,7 @@ if [ -f "$HOOK_ROOT/codex-packaged-runtime.sh" ]; then
     declare -F codex_packaged_runtime_prelaunch >/dev/null && codex_packaged_runtime_prelaunch
 fi
 
+report_daily_usage
 run_hook_directory "$HOOK_ROOT/cold-start.d" cold-start &
 
 if [ ! -d "$HOOK_ROOT/after-exit.d" ] ||

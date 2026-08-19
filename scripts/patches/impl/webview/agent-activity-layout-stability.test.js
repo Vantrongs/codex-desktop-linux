@@ -44,6 +44,15 @@ function uncorrelatedFixture() {
   );
 }
 
+function lazyChildrenFixture() {
+  return fixture()
+    .replace(
+      "m=()=>f?p?`expanded`:a?`closing`:`collapsed`:`collapsed`",
+      "m=()=>f?p?`expanded`:a&&typeof u!=`function`?`closing`:`collapsed`:`collapsed`",
+    )
+    .replace("children:u}):null", "children:typeof u==`function`?u():u}):null");
+}
+
 test("agent activity disclosure uses a discrete transition without layout measurement", () => {
   const source = fixture();
   assert.equal(isAgentActivityLayoutAsset(source), true);
@@ -70,6 +79,18 @@ test("agent activity disclosure accepts React compiler boolean default forms", (
   const patched = applyLinuxAgentActivityLayoutStabilityPatch(source);
   assert.equal(hasUnsafeAgentActivityLayout(patched), false);
   assert.doesNotMatch(patched, /height:`auto`/u);
+});
+
+test("agent activity disclosure preserves lazy body evaluation", () => {
+  const source = lazyChildrenFixture();
+  assert.equal(isAgentActivityLayoutAsset(source), true);
+
+  const patched = applyLinuxAgentActivityLayoutStabilityPatch(source);
+  assert.equal(hasUnsafeAgentActivityLayout(patched), false);
+  assert.match(
+    patched,
+    /w=f&&v\?\(0,D4\.jsx\)\(`div`,\{style:\{overflow:`hidden`\},children:typeof u==`function`\?u\(\):u\}\):null/u,
+  );
 });
 
 test("agent activity layout patch ignores unrelated motion disclosure code", () => {

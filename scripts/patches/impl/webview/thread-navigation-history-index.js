@@ -1,5 +1,7 @@
 "use strict";
 
+const { findMatchingBrace } = require("../../lib/minified-js.js");
+
 const THREAD_NAVIGATION_HISTORY_INDEX_MARKER =
   "codexLinuxThreadNavigationUsesHistoryIndex";
 const IDENTIFIER = "[A-Za-z_$][\\w$]*";
@@ -54,6 +56,86 @@ function matchesHistoryIndexContract(source, flagName, flagIndex) {
   );
 }
 
+function hasHistoryIndexQueryContract(source) {
+  const queryIndex = source.indexOf("prompt-rail-history");
+  if (queryIndex < 0) return false;
+  const queryModule = source.slice(
+    Math.max(0, queryIndex - 2_500),
+    queryIndex + 1_000,
+  );
+  return (
+    queryModule.includes("itemsView:`notLoaded`,sortDirection:`desc`") &&
+    queryModule.includes("nextCursor==null)return{items:r.reverse(),complete:!0}") &&
+    queryModule.includes("return{items:r.reverse(),complete:!1}") &&
+    queryModule.includes("itemsView:`full`,sortDirection:`desc`")
+  );
+}
+
+function findIntegratedHistoryIndexContracts(source) {
+  const contracts = [];
+  let historyAliasIndex = -1;
+  while ((historyAliasIndex = source.indexOf("usesHistoryTimeline:", historyAliasIndex + 1)) !== -1) {
+    const functionStart = source.lastIndexOf("function ", historyAliasIndex);
+    if (functionStart < 0) continue;
+    const parameterEnd = source.indexOf("){", historyAliasIndex);
+    const openBrace = parameterEnd < 0 ? -1 : parameterEnd + 1;
+    const closeBrace = findMatchingBrace(source, openBrace);
+    if (openBrace < 0 || closeBrace < historyAliasIndex) continue;
+    const threadFunction = source.slice(functionStart, closeBrace + 1);
+    const historyAlias = new RegExp(`usesHistoryTimeline:(${IDENTIFIER})`, "u")
+      .exec(threadFunction)?.[1];
+    if (historyAlias == null) continue;
+
+    const historyGate = new RegExp(
+      `(${IDENTIFIER})=${escapeRegExp(historyAlias)}&&!(${IDENTIFIER})`,
+      "u",
+    ).exec(threadFunction);
+    if (historyGate == null) continue;
+    const historyGateAlias = historyGate[1];
+
+    const paginatedGate = new RegExp(
+      `(${IDENTIFIER})=${escapeRegExp(historyGateAlias)}&&(${IDENTIFIER})===` +
+        "`paginated`",
+      "u",
+    ).exec(threadFunction);
+    if (paginatedGate == null) continue;
+    const modeAlias = paginatedGate[2];
+
+    const railGate = new RegExp(
+      `(${IDENTIFIER})=${escapeRegExp(historyGateAlias)}&&\\(` +
+        `${escapeRegExp(modeAlias)}===` +
+        "`paginated`" +
+        `\\|\\|${escapeRegExp(modeAlias)}===` +
+        "`legacy`" +
+        `&&${IDENTIFIER}\\(${IDENTIFIER}\\)\\)&&!${IDENTIFIER}&&` +
+        `${IDENTIFIER}!==` +
+        "`subagent`",
+      "u",
+    ).exec(threadFunction);
+    if (railGate == null) continue;
+    const railGateAlias = railGate[1];
+
+    const queryGate = new RegExp(
+      `\\{data:(${IDENTIFIER})\\}=${IDENTIFIER}\\(${IDENTIFIER},` +
+        `${escapeRegExp(railGateAlias)}\\?${IDENTIFIER}:null\\),` +
+        `${IDENTIFIER}=${escapeRegExp(railGateAlias)}&&\\1\\?\\.complete===!0`,
+      "u",
+    ).exec(threadFunction);
+    if (queryGate == null) continue;
+    contracts.push({ start: functionStart, end: closeBrace + 1 });
+  }
+  return contracts;
+}
+
+function hasIntegratedThreadNavigationHistoryIndex(source) {
+  return (
+    !source.includes(THREAD_NAVIGATION_HISTORY_INDEX_MARKER) &&
+    upstreamFlags(source).length === 0 &&
+    findIntegratedHistoryIndexContracts(source).length === 1 &&
+    hasHistoryIndexQueryContract(source)
+  );
+}
+
 function installedFlags(source) {
   return [...source.matchAll(new RegExp(INSTALLED_FLAG_PATTERN.source, "gu"))];
 }
@@ -77,7 +159,7 @@ function isThreadNavigationHistoryIndexAsset(source) {
     return hasInstalledThreadNavigationHistoryIndex(source);
   }
   const upstream = upstreamFlags(source);
-  return (
+  return hasIntegratedThreadNavigationHistoryIndex(source) || (
     upstream.length === 1 &&
     matchesHistoryIndexContract(source, upstream[0][1], upstream[0].index)
   );
@@ -88,6 +170,8 @@ function applyLinuxThreadNavigationHistoryIndexPatch(source) {
     if (hasInstalledThreadNavigationHistoryIndex(source)) return source;
     throw new Error("Found partial thread navigation history index patch");
   }
+
+  if (hasIntegratedThreadNavigationHistoryIndex(source)) return source;
 
   const upstream = upstreamFlags(source);
   if (

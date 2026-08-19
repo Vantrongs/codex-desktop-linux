@@ -26,6 +26,11 @@ const {
   recordReplayHelperSource,
   recordReplayHudRuntimeSource,
 } = require("./patch.js");
+const {
+  applyChronicleSkysightMainBridgePatch,
+  chronicleSkysightHelperSource: recordReplayChronicleHelperSource,
+  recordReplayRuntimeHelperSource,
+} = require("../chronicle-skysight/patch.js");
 
 const featureDir = __dirname;
 
@@ -44,12 +49,30 @@ function repoRoot() {
   return path.resolve(featureDir, "../..");
 }
 
+function stageSharedChronicleBackend(workspace, installDir, fakeBinary) {
+  execFileSync(
+    "bash",
+    [path.join(featureDir, "../chronicle-skysight/stage.sh")],
+    {
+      cwd: workspace,
+      env: {
+        ...process.env,
+        SCRIPT_DIR: repoRoot(),
+        INSTALL_DIR: installDir,
+        CODEX_RECORD_REPLAY_LINUX_SOURCE: fakeBinary,
+      },
+      stdio: "pipe",
+    },
+  );
+}
+
 function withTempFeatureRoot(enabled, fn) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-record-and-replay-feature-test-"));
   const originalConfig = process.env.CODEX_LINUX_FEATURES_CONFIG;
   try {
     fs.writeFileSync(path.join(root, "features.example.json"), JSON.stringify({ enabled: [] }, null, 2));
     fs.writeFileSync(path.join(root, "features.json"), JSON.stringify({ enabled }, null, 2));
+    fs.cpSync(path.resolve(__dirname, "../chronicle-skysight"), path.join(root, "chronicle-skysight"), { recursive: true });
     fs.cpSync(path.resolve(__dirname), path.join(root, "record-and-replay"), { recursive: true });
     return fn(root);
   } finally {
@@ -85,6 +108,7 @@ test("manifest keeps record-and-replay disabled by default", () => {
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   assert.equal(manifest.id, "record-and-replay");
   assert.equal(manifest.defaultEnabled, false);
+  assert.deepEqual(manifest.requires, ["chronicle-skysight"]);
 });
 
 test("record-and-replay required files exist", () => {
@@ -106,13 +130,23 @@ test("record-and-replay is opt-in and disabled unless configured", () => {
   });
 });
 
-test("record-and-replay enables when listed in features.json", () => {
-  withTempFeatureRoot(["record-and-replay"], (root) => {
+test("record-and-replay enables with chronicle-skysight dependency", () => {
+  withTempFeatureRoot(["chronicle-skysight", "record-and-replay"], (root) => {
     const ids = enabledLinuxFeatureIds({ featuresRoot: root });
-    assert.deepEqual(ids, ["record-and-replay"]);
+    assert.deepEqual(ids, ["chronicle-skysight", "record-and-replay"]);
     assert.deepEqual(loadEnabledLinuxFeatures({ featuresRoot: root }).map((feature) => feature.id), [
+      "chronicle-skysight",
       "record-and-replay",
     ]);
+  });
+});
+
+test("record-and-replay migrates direct config by enabling chronicle-skysight", () => {
+  withTempFeatureRoot(["record-and-replay"], (root) => {
+    assert.deepEqual(
+      loadEnabledLinuxFeatures({ featuresRoot: root }).map((feature) => feature.id),
+      ["chronicle-skysight", "record-and-replay"],
+    );
   });
 });
 
@@ -120,9 +154,10 @@ test("record-and-replay patch descriptor loads only when feature is enabled", ()
   withTempFeatureConfig([], (root) => {
     assert.deepEqual(loadLinuxFeaturePatchDescriptors({ featuresRoot: root }), []);
   });
-  withTempFeatureConfig(["record-and-replay"], (root) => {
+  withTempFeatureConfig(["chronicle-skysight", "record-and-replay"], (root) => {
     const loaded = loadLinuxFeaturePatchDescriptors({ featuresRoot: root });
     assert.deepEqual(loaded.map((descriptor) => descriptor.id), [
+      "feature:chronicle-skysight:linux-chronicle-skysight-main-bridge",
       "feature:record-and-replay:record-and-replay-plugin-gate",
       "feature:record-and-replay:linux-record-replay-main-bridge",
       "feature:record-and-replay:record-replay-hud",
@@ -138,7 +173,7 @@ test("record-and-replay dictation descriptor tracks moved upstream composer bund
   assert.ok(descriptor);
   assert.equal(descriptor.pattern.test("app-initial-C-fROkKo.js"), true);
   assert.equal(descriptor.assetMatch(
-    "let l=c.trim();l.length>0&&(a==null?mm.getInstance().dispatchMessage(`global-dictation-record-history-item`,{text:l}):a.setTranscript(l),n.performance.mark(`transcript_dispatched`),t===`send`?i.onTranscriptSend(l):i.onTranscriptInsert(l))",
+    "let l=c.trim();l.length>0&&(a==null?_m.getInstance().dispatchMessage(`global-dictation-record-history-item`,{text:l}):a.setTranscript(l),t.performance.mark(`transcript_dispatched`),e.action===`send`?i.onTranscriptSend(l):i.onTranscriptInsert(l))",
   ), true);
   assert.equal(descriptor.pattern.test("app-initial~app-main~onboarding-page-BUwCKIcU.js"), false);
   assert.equal(descriptor.pattern.test("use-dictation-BUwCKIcU.js"), false);
@@ -161,7 +196,8 @@ test("record-and-replay bridge patch is idempotent and uses execFile", () => {
     "var bridge={\"get-global-state\":async({key:e})=>null};",
   ].join("");
 
-  const patched = applyRecordReplayMainBridgePatch(source);
+  const chroniclePatched = applyChronicleSkysightMainBridgePatch(source);
+  const patched = applyRecordReplayMainBridgePatch(chroniclePatched);
   assert.notEqual(patched, source);
   assert.equal(applyRecordReplayMainBridgePatch(patched), patched);
   assert.match(patched, /"linux-record-replay-doctor":async/);
@@ -215,25 +251,9 @@ test("record-and-replay bridge patch is idempotent and uses execFile", () => {
   assert.doesNotMatch(patched, /"--target"/);
   assert.doesNotMatch(patched, /"--target-dir"/);
   assert.doesNotMatch(patched, /"--mode"/);
-});
-
-test("record-and-replay bridge is complete and idempotent on the official bundle", () => {
-  const source = [
-    '"use strict";let electron=require("electron");',
-    'const cp=require("node:child_process"),fs=require("node:fs"),path=require("node:path");',
-    "var tray={getChronicleSidecarControlState:()=>tt().skysight?$9:Se.appServerConnectionRegistry.getMaybeConnection(`local`)?.getChronicleSidecarControlState()??$9,toggleChronicleSidecar:async()=>{if(tt().skysight)return $9;let e=Se.appServerConnectionRegistry.getMaybeConnection(V);return e==null?$9:e.getChronicleSidecarControlState().running?e.pauseChronicleSidecar():e.resumeChronicleSidecar()}};",
-    'var bridge={"get-global-state":async({key:e})=>null};',
-  ].join("");
-  const recordPatched = applyRecordReplayMainBridgePatch(source);
-  const { value, warnings } = captureWarns(() =>
-    applyRecordReplayMainBridgePatch(recordPatched),
-  );
-
-  assert.equal(value, recordPatched);
-  assert.deepEqual(warnings, []);
-  assert.match(
-    recordPatched,
-    /require\("node:child_process"\)\.execFile\(/,
+  assert.doesNotMatch(
+    recordReplayBridgeSource({ fsVar: "fs" }),
+    /chronicle-permissions|linux-record-replay-skysight/,
   );
 });
 
@@ -243,7 +263,8 @@ test("record-and-replay rejects incomplete current bridge variants byte-identica
     "var tray={getChronicleSidecarControlState:()=>tt().skysight?$9:Se.appServerConnectionRegistry.getMaybeConnection(`local`)?.getChronicleSidecarControlState()??$9,toggleChronicleSidecar:async()=>{if(tt().skysight)return $9;let e=Se.appServerConnectionRegistry.getMaybeConnection(V);return e==null?$9:e.getChronicleSidecarControlState().running?e.pauseChronicleSidecar():e.resumeChronicleSidecar()}};",
     'var bridge={"get-global-state":async({key:e})=>null};',
   ].join("");
-  const patched = applyRecordReplayMainBridgePatch(source);
+  const chroniclePatched = applyChronicleSkysightMainBridgePatch(source);
+  const patched = applyRecordReplayMainBridgePatch(chroniclePatched);
   const moduleExpressions = {
     childProcessVar: 'require("node:child_process")',
     fsVar: 'require("node:fs")',
@@ -251,17 +272,7 @@ test("record-and-replay rejects incomplete current bridge variants byte-identica
   };
   const bridgePayload = recordReplayBridgeSource(moduleExpressions);
   const helperPayload = recordReplayHelperSource(moduleExpressions);
-  const trayStart = patched.indexOf("var tray=");
-  const trayEnd = patched.indexOf(";var bridge=", trayStart);
-  const trayStatement = patched.slice(trayStart, trayEnd + 1);
   const variants = {
-    "legacy tray shape": patched
-      .replace(":tt().skysight?$9:", ":")
-      .replace("if(tt().skysight)return $9;", ""),
-    "missing Linux toggle branch": patched.replace(
-      "if(process.platform===`linux`)return codexLinuxChronicleToggleSidecar();",
-      "",
-    ),
     "missing current bridge handler": patched.replace(
       '"linux-record-replay-status":async',
       '"linux-record-replay-status-missing":async',
@@ -274,9 +285,8 @@ test("record-and-replay rejects incomplete current bridge variants byte-identica
       `${bridgePayload},"get-global-state":async`,
       `${bridgePayload},${bridgePayload},"get-global-state":async`,
     ),
-    "helper-only partial": `${helperPayload}\n${source}`,
+    "helper-only partial": `${helperPayload}\n${chroniclePatched}`,
     "duplicate helper payload": `${helperPayload}\n${patched}`,
-    "duplicate patched tray": `${patched}${trayStatement}`,
   };
 
   for (const [name, drifted] of Object.entries(variants)) {
@@ -289,7 +299,7 @@ test("record-and-replay rejects incomplete current bridge variants byte-identica
 });
 
 test("record-and-replay Chronicle helpers map Skysight status into upstream sidecar state", () => {
-  const helperSource = recordReplayHelperSource({
+  const helperSource = recordReplayRuntimeHelperSource({
     childProcessVar: "childProcess",
     fsVar: "fs",
     pathVar: "path",
@@ -346,7 +356,7 @@ test("record-and-replay Chronicle helpers map Skysight status into upstream side
 });
 
 test("record-and-replay Chronicle permissions probe is side-effect free", async () => {
-  const helperSource = recordReplayHelperSource({
+  const helperSource = recordReplayRuntimeHelperSource({
     childProcessVar: "childProcess",
     fsVar: "fs",
     pathVar: "path",
@@ -379,7 +389,7 @@ test("record-and-replay Chronicle permissions probe is side-effect free", async 
 });
 
 test("record-and-replay Chronicle setup probe starts stopped Linux Skysight", async () => {
-  const helperSource = recordReplayHelperSource({
+  const helperSource = recordReplayRuntimeHelperSource({
     childProcessVar: "childProcess",
     fsVar: "fs",
     pathVar: "path",
@@ -419,7 +429,7 @@ test("record-and-replay Chronicle setup probe starts stopped Linux Skysight", as
 });
 
 test("record-and-replay Chronicle setup probe enables summary agent when Settings turns Chronicle on", async () => {
-  const helperSource = recordReplayHelperSource({
+  const helperSource = recordReplayRuntimeHelperSource({
     childProcessVar: "childProcess",
     fsVar: "fs",
     pathVar: "path",
@@ -459,7 +469,7 @@ test("record-and-replay Chronicle setup probe enables summary agent when Setting
 });
 
 test("record-and-replay Chronicle setup probe does not churn start when summary agent is already enabled", async () => {
-  const helperSource = recordReplayHelperSource({
+  const helperSource = recordReplayRuntimeHelperSource({
     childProcessVar: "childProcess",
     fsVar: "fs",
     pathVar: "path",
@@ -506,11 +516,13 @@ test("record-and-replay generic Skysight start can pass summary agent true or fa
     "var tray={getChronicleSidecarControlState:()=>tt().skysight?$9:Se.appServerConnectionRegistry.getMaybeConnection(`local`)?.getChronicleSidecarControlState()??$9,toggleChronicleSidecar:async()=>{if(tt().skysight)return $9;let e=Se.appServerConnectionRegistry.getMaybeConnection(V);return e==null?$9:e.getChronicleSidecarControlState().running?e.pauseChronicleSidecar():e.resumeChronicleSidecar()}};",
     "var bridge={\"get-global-state\":async({key:e})=>null};",
   ].join("");
-  const patched = applyRecordReplayMainBridgePatch(source);
+  const patched = applyChronicleSkysightMainBridgePatch(source);
   assert.match(
     patched,
-    /"linux-record-replay-skysight-start":async\(\{intervalSeconds:e,summaryAgent:t\}=\{\}\)=>\{let n=\["skysight","start"\]/,
+    /"linux-record-replay-skysight-start":async\(\{intervalSeconds:e,summaryAgent:t,source:r,owner:a\}=\{\}\)=>\{let n=\["skysight","start"\]/,
   );
+  assert.match(patched, /r&&n\.push\("--source",String\(r\)\)/);
+  assert.match(patched, /a&&n\.push\("--owner",String\(a\)\)/);
   assert.match(patched, /t===!0&&n\.push\("--summary-agent","enabled"\)/);
   assert.match(patched, /t===!1&&n\.push\("--summary-agent","disabled"\)/);
 });
@@ -521,10 +533,10 @@ test("record-and-replay patch wires Linux Chronicle tray controls to Skysight", 
     "var tray={getChronicleSidecarControlState:()=>tt().skysight?$9:Se.appServerConnectionRegistry.getMaybeConnection(`local`)?.getChronicleSidecarControlState()??$9,toggleChronicleSidecar:async()=>{if(tt().skysight)return $9;let e=Se.appServerConnectionRegistry.getMaybeConnection(V);return e==null?$9:e.getChronicleSidecarControlState().running?e.pauseChronicleSidecar():e.resumeChronicleSidecar()}};",
     'var bridge={"get-global-state":async({key:e})=>null};',
   ].join("");
-  const patched = applyRecordReplayMainBridgePatch(source);
+  const patched = applyChronicleSkysightMainBridgePatch(source);
 
   assert.notEqual(patched, source);
-  assert.equal(applyRecordReplayMainBridgePatch(patched), patched);
+  assert.equal(applyChronicleSkysightMainBridgePatch(patched), patched);
   assert.match(patched, /getChronicleSidecarControlState:\(\)=>process\.platform===`linux`\?codexLinuxChronicleSidecarControlState\(\)/);
   assert.match(patched, /toggleChronicleSidecar:async\(\)=>\{if\(process\.platform===`linux`\)return codexLinuxChronicleToggleSidecar\(\)/);
   assert.match(patched, /if\(tt\(\)\.skysight\)return \$9/);
@@ -538,7 +550,7 @@ test("record-and-replay rejects partial current Chronicle tray drift byte-identi
     'var bridge={"get-global-state":async({key:e})=>null};',
   ].join("");
 
-  assert.equal(applyRecordReplayMainBridgePatch(source), source);
+  assert.equal(applyChronicleSkysightMainBridgePatch(source), source);
 });
 
 test("record-and-replay docs mention pause resume and Chronicle-compatible resources", () => {
@@ -616,46 +628,36 @@ test("record-and-replay HUD patch is idempotent and appends runtime UI", () => {
   assert.doesNotMatch(patched, /finalizeVoiceCapture/);
 });
 
-test("record-and-replay mirrors finalized dictation transcripts into active bundle", () => {
+test("record-and-replay rejects the retired non-persistent composer contract", () => {
   const source =
     "function send(e,n){let i=`Create an image of a neon cabin`;i.length>0&&(j.getInstance().dispatchMessage(`global-dictation-record-history-item`,{text:i}),e===`send`?n.onTranscriptSend(i):n.onTranscriptInsert(i))}";
   const patched = applyRecordReplayDictationTranscriptPatch(source);
 
-  assert.notEqual(patched, source);
-  assert.equal(applyRecordReplayDictationTranscriptPatch(patched), patched);
-  assert.match(patched, /codexLinuxRecordReplayCaptureTranscript\?\.\(i,e\)/);
-  assert.match(patched, /codexLinuxRecordReplayPendingTranscripts\?\?=\[\]/);
-  assert.match(patched, /global-dictation-record-history-item/);
-  assert.match(patched, /e===`send`\?n\.onTranscriptSend\(i\):n\.onTranscriptInsert\(i\)/);
+  assert.equal(patched, source);
 });
 
-test("record-and-replay matches the official 26.803.81509 persistent composer transcript", () => {
+test("record-and-replay matches the official 26.810.41047 persistent composer transcript", () => {
   const source =
-    "let l=c.trim();l.length>0&&(a==null?mm.getInstance().dispatchMessage(`global-dictation-record-history-item`,{text:l}):a.setTranscript(l),n.performance.mark(`transcript_dispatched`),t===`send`?i.onTranscriptSend(l):i.onTranscriptInsert(l))";
+    "let l=c.trim();l.length>0&&(a==null?_m.getInstance().dispatchMessage(`global-dictation-record-history-item`,{text:l}):a.setTranscript(l),t.performance.mark(`transcript_dispatched`),e.action===`send`?i.onTranscriptSend(l):i.onTranscriptInsert(l))";
   const patched = applyRecordReplayDictationTranscriptPatch(source);
 
   assert.notEqual(patched, source);
   assert.equal(applyRecordReplayDictationTranscriptPatch(patched), patched);
-  assert.match(patched, /codexLinuxRecordReplayCaptureTranscript\?\.\(l,t\)/);
-  assert.match(patched, /a==null\?mm\.getInstance\(\)\.dispatchMessage/);
+  assert.match(patched, /codexLinuxRecordReplayCaptureTranscript\?\.\(l,e\.action\)/);
+  assert.match(patched, /a==null\?_m\.getInstance\(\)\.dispatchMessage/);
   assert.match(patched, /a\.setTranscript\(l\)/);
-  assert.match(patched, /t===`send`\?i\.onTranscriptSend\(l\):i\.onTranscriptInsert\(l\)/);
+  assert.match(patched, /e\.action===`send`\?i\.onTranscriptSend\(l\):i\.onTranscriptInsert\(l\)/);
 });
 
-test("record-and-replay mirrors global dictation completions into active bundle", () => {
+test("record-and-replay rejects the retired pre-analytics global dictation contract", () => {
   const source =
     "async function L(e,t,n=null){let r=await f({transcript:n==null?await y(e.audio):await R(n,e.audio),cleanupEnabled:t});U===e&&(U=null),a.dispatchMessage(`global-dictation-completed`,{sessionId:e.sessionId,text:r})}";
   const patched = applyRecordReplayGlobalDictationTranscriptPatch(source);
 
-  assert.notEqual(patched, source);
-  assert.equal(applyRecordReplayGlobalDictationTranscriptPatch(patched), patched);
-  assert.match(patched, /codex-linux-record-replay-global-dictation/);
-  assert.match(patched, /linux-record-replay-speech-context-active/);
-  assert.match(patched, /source:"codex-global-dictation"/);
-  assert.match(patched, /a\.dispatchMessage\(`global-dictation-completed`,\{sessionId:e\.sessionId,text:r\}\)/);
+  assert.equal(patched, source);
 });
 
-test("record-and-replay matches the official 26.803.81509 global dictation success chain", () => {
+test("record-and-replay matches the official 26.810.41047 global dictation success chain", () => {
   const source =
     "async function U(e,t,n=null){let r=Date.now(),i=n==null?await I(e.audio):await W(n,e.audio);e.analytics.performance.mark(`final_received`);let a=await E({transcript:i,cleanupEnabled:t});J===e&&(J=null),a.trim().length>0&&e.recordingPersistence?.setTranscript(a.trim()),e.analytics.performance.mark(`transcript_dispatched`),B.dispatchMessage(`global-dictation-completed`,{sessionId:e.sessionId,text:a})}";
   const patched = applyRecordReplayGlobalDictationTranscriptPatch(source);
@@ -668,7 +670,7 @@ test("record-and-replay matches the official 26.803.81509 global dictation succe
 
 test("record-and-replay current transcript drift remains byte-identical", () => {
   const composer =
-    "let l=c.trim();l.length>0&&(a==null?mm.getInstance().dispatchMessage(`global-dictation-record-history-item`,{text:l}):a.persistTranscript(l),n.performance.mark(`transcript_dispatched`),t===`send`?i.onTranscriptSend(l):i.onTranscriptInsert(l))";
+    "let l=c.trim();l.length>0&&(a==null?_m.getInstance().dispatchMessage(`global-dictation-record-history-item`,{text:l}):a.persistTranscript(l),t.performance.mark(`transcript_dispatched`),e.action===`send`?i.onTranscriptSend(l):i.onTranscriptInsert(l))";
   const global =
     "e.analytics.performance.mark(`transcript_saved`),B.dispatchMessage(`global-dictation-completed`,{sessionId:e.sessionId,text:a})";
 
@@ -678,9 +680,9 @@ test("record-and-replay current transcript drift remains byte-identical", () => 
 
 test("record-and-replay generated transcript runtimes are syntactically valid", () => {
   const source =
-    "function send(e,n){let i=`Create an image of a neon cabin`;i.length>0&&(j.getInstance().dispatchMessage(`global-dictation-record-history-item`,{text:i}),e===`send`?n.onTranscriptSend(i):n.onTranscriptInsert(i))}";
+    "let l=c.trim();l.length>0&&(a==null?_m.getInstance().dispatchMessage(`global-dictation-record-history-item`,{text:l}):a.setTranscript(l),t.performance.mark(`transcript_dispatched`),e.action===`send`?i.onTranscriptSend(l):i.onTranscriptInsert(l))";
   const globalDictationSource =
-    "async function L(e,t,n=null){let r=await f({transcript:n==null?await y(e.audio):await R(n,e.audio),cleanupEnabled:t});U===e&&(U=null),a.dispatchMessage(`global-dictation-completed`,{sessionId:e.sessionId,text:r})}";
+    "async function U(e,t,n=null){let r=Date.now(),i=n==null?await I(e.audio):await W(n,e.audio);e.analytics.performance.mark(`final_received`);let a=await E({transcript:i,cleanupEnabled:t});J===e&&(J=null),a.trim().length>0&&e.recordingPersistence?.setTranscript(a.trim()),e.analytics.performance.mark(`transcript_dispatched`),B.dispatchMessage(`global-dictation-completed`,{sessionId:e.sessionId,text:a})}";
 
   assert.doesNotThrow(() => new vm.Script(recordReplayHudRuntimeSource()));
   assert.doesNotThrow(() => new vm.Script(applyRecordReplayDictationTranscriptPatch(source)));
@@ -823,15 +825,14 @@ test("record-and-replay transcript hook composes after conversation mode transcr
 
 test("record-and-replay plugin gate is idempotent and linux-only", () => {
   const source = [
-    "var lt=`browser-use`,ft=`computer-use`,pt=`latex-tectonic`;",
-    "var Kr=[{forceReload:!0,installWhenMissing:!0,name:lt,isAvailable:({features:e})=>e.inAppBrowserUseAllowed},{name:ft,isAvailable:({features:e,platform:t})=>t===`darwin`&&e.computerUse,migrate:vr},{name:pt,isAvailable:()=>!0}];",
+    "var Kr=[{...n.Ds.codexAppTools,isAvailable:()=>!0},{...n.Ds.browser,autoInstallOptOutKey:n.As(n.Ds.browser.name),isAvailable:({features:e})=>e.inAppBrowserUseAllowed},{...n.Ds.computerUse,autoInstallOptOutKey:n.As(n.Ds.computerUse.name),isAvailable:({features:e,platform:t})=>t===`darwin`&&e.computerUse},{...n.Ds.computerUse,autoInstallOptOutKey:n.As(n.Ds.computerUse.name),isAvailable:({features:e,platform:t})=>t===`win32`&&e.computerUse},{...n.Ds.latex,isAvailable:()=>!0},{...n.Ds.visualize,syncToRemoteSshHosts:!0,isAvailable:()=>!0}];",
   ].join("");
 
   const patched = applyRecordReplayPluginGatePatch(source);
   assert.notEqual(patched, source);
   assert.equal(applyRecordReplayPluginGatePatch(patched), patched);
   assert.match(patched, /installWhenMissing:!0,name:`record-and-replay`,isAvailable:\(\{platform:e\}\)=>e===`linux`/);
-  assert.match(patched, /name:ft,isAvailable:\(\{features:e,platform:t\}\)=>t===`darwin`&&e\.computerUse/);
+  assert.match(patched, /\.\.\.n\.Ds\.computerUse,autoInstallOptOutKey:n\.As\(n\.Ds\.computerUse\.name\)/);
 });
 
 test("record-and-replay plugin gate rejects obsolete isEnabled availability contract", () => {
@@ -933,6 +934,7 @@ test("record-and-replay stage hook records marketplace entry and stages plugin",
     fs.writeFileSync(marketplace, JSON.stringify({ plugins: [{ name: "computer-use", source: { path: "./plugins/computer-use" } }] }));
     fs.writeFileSync(fakeBinary, "#!/bin/sh\nprintf '{\"ok\":true}\\n'\n");
     fs.chmodSync(fakeBinary, 0o755);
+    stageSharedChronicleBackend(workspace, installDir, fakeBinary);
 
     execFileSync("bash", [path.join(featureDir, "stage.sh")], {
       cwd: workspace,
@@ -940,7 +942,6 @@ test("record-and-replay stage hook records marketplace entry and stages plugin",
         ...process.env,
         SCRIPT_DIR: repoRoot(),
         INSTALL_DIR: installDir,
-        CODEX_RECORD_REPLAY_LINUX_SOURCE: fakeBinary,
       },
       stdio: "pipe",
     });
@@ -978,7 +979,7 @@ test("record-and-replay stage hook records marketplace entry and stages plugin",
   }
 });
 
-test("record-and-replay disabled rebuild exposes cleanup hook for staged payload", () => {
+test("record-and-replay cleanup preserves Chronicle shared backend", () => {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "codex-record-replay-cleanup-"));
   const originalRoot = process.env.CODEX_LINUX_FEATURES_ROOT;
   try {
@@ -1011,7 +1012,7 @@ test("record-and-replay disabled rebuild exposes cleanup hook for staged payload
     });
     stageEnabledLinuxFeatureInstall(installDir, { featuresRoot });
 
-    assert.equal(fs.existsSync(staleNative), false);
+    assert.equal(fs.existsSync(staleNative), true);
     assert.equal(fs.existsSync(stalePlugin), false);
     const parsedMarketplace = JSON.parse(fs.readFileSync(marketplace, "utf8"));
     assert.deepEqual(parsedMarketplace.plugins.map((plugin) => plugin.name), ["computer-use"]);
@@ -1032,7 +1033,7 @@ test("record-and-replay stage hook uses the current upstream plugin shell when p
     const fakeBinary = path.join(workspace, "codex-record-replay-linux");
     const upstreamPlugin = path.join(
       workspace,
-      "upstream/usr/lib/chatgpt/resources/plugins/openai-bundled/plugins/record-and-replay",
+      "upstream/ChatGPT/resources/plugins/openai-bundled/plugins/record-and-replay",
     );
     const marketplace = path.join(installDir, "resources/plugins/openai-bundled/.agents/plugins/marketplace.json");
     fs.mkdirSync(path.join(upstreamPlugin, ".codex-plugin"), { recursive: true });
@@ -1078,6 +1079,7 @@ test("record-and-replay stage hook uses the current upstream plugin shell when p
     fs.writeFileSync(marketplace, JSON.stringify({ plugins: [] }));
     fs.writeFileSync(fakeBinary, "#!/bin/sh\nprintf '{\"ok\":true}\\n'\n");
     fs.chmodSync(fakeBinary, 0o755);
+    stageSharedChronicleBackend(workspace, installDir, fakeBinary);
 
     execFileSync("bash", [path.join(featureDir, "stage.sh")], {
       cwd: workspace,
@@ -1085,8 +1087,7 @@ test("record-and-replay stage hook uses the current upstream plugin shell when p
         ...process.env,
         SCRIPT_DIR: repoRoot(),
         INSTALL_DIR: installDir,
-        CODEX_UPSTREAM_APP_DIR: path.join(workspace, "upstream/usr/lib/chatgpt"),
-        CODEX_RECORD_REPLAY_LINUX_SOURCE: fakeBinary,
+        CODEX_UPSTREAM_APP_DIR: path.join(workspace, "upstream/ChatGPT"),
       },
       stdio: "pipe",
     });
@@ -1125,7 +1126,7 @@ test("record-and-replay stage hook rejects the obsolete nested-app plugin shell"
     const fakeBinary = path.join(workspace, "codex-record-replay-linux");
     const upstreamPlugin = path.join(
       workspace,
-      "upstream/usr/lib/chatgpt/resources/plugins/openai-bundled/plugins/record-and-replay",
+      "upstream/ChatGPT/resources/plugins/openai-bundled/plugins/record-and-replay",
     );
     const oldClient = path.join(
       upstreamPlugin,
@@ -1166,6 +1167,7 @@ test("record-and-replay stage hook rejects the obsolete nested-app plugin shell"
     fs.writeFileSync(marketplace, JSON.stringify({ plugins: [] }));
     fs.writeFileSync(fakeBinary, "#!/bin/sh\nprintf '{\"ok\":true}\\n'\n");
     fs.chmodSync(fakeBinary, 0o755);
+    stageSharedChronicleBackend(workspace, installDir, fakeBinary);
 
     execFileSync("bash", [path.join(featureDir, "stage.sh")], {
       cwd: workspace,
@@ -1173,8 +1175,7 @@ test("record-and-replay stage hook rejects the obsolete nested-app plugin shell"
         ...process.env,
         SCRIPT_DIR: repoRoot(),
         INSTALL_DIR: installDir,
-        CODEX_UPSTREAM_APP_DIR: path.join(workspace, "upstream/usr/lib/chatgpt"),
-        CODEX_RECORD_REPLAY_LINUX_SOURCE: fakeBinary,
+        CODEX_UPSTREAM_APP_DIR: path.join(workspace, "upstream/ChatGPT"),
       },
       stdio: "pipe",
     });
@@ -1198,6 +1199,7 @@ test("record-and-replay stage hook borrows upstream webview icon when present", 
     fs.writeFileSync(path.join(assetsDir, "record-and-replay-plugin-icon-fixture.png"), "fake-png");
     fs.writeFileSync(fakeBinary, "#!/bin/sh\nprintf '{\"ok\":true}\\n'\n");
     fs.chmodSync(fakeBinary, 0o755);
+    stageSharedChronicleBackend(workspace, installDir, fakeBinary);
 
     execFileSync("bash", [path.join(featureDir, "stage.sh")], {
       cwd: workspace,
@@ -1205,7 +1207,6 @@ test("record-and-replay stage hook borrows upstream webview icon when present", 
         ...process.env,
         SCRIPT_DIR: repoRoot(),
         INSTALL_DIR: installDir,
-        CODEX_RECORD_REPLAY_LINUX_SOURCE: fakeBinary,
       },
       stdio: "pipe",
     });

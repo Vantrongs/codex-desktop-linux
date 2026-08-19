@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- The launcher sends at most one anonymous `/app-launch` count per UTC day to
+  the public GoatCounter dashboard so maintainers can gauge whether the
+  distribution is useful. The background request uses one fixed,
+  non-identifying User-Agent and contains no application, account, machine,
+  version, architecture, language, screen, or referrer data;
+  `CODEX_LINUX_DISABLE_USAGE_REPORTING=1` disables it.
 - A disabled-by-default `deferred-update-build` Linux feature adds a **Build
   updates automatically** setting. Turning it off keeps notification and DMG
   verification active while deferring local package builds until an explicit
@@ -44,6 +50,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- The opt-in `frameless-titlebar` feature again hides official Linux overlay
+  buttons. It retargets the current `titleBarOverlay` window options, zoom
+  update, and theme-sync contracts, remaps Linux webview chrome to `native`,
+  and rejects mixed, duplicate, or drifted official-package surfaces
+  byte-identically. Retired DMG inset and user-agent layout-gate rewrites are
+  omitted because official Linux already uses a 0px inset for both layouts.
 - The opt-in Dock icon tweak is restored for the signed official Linux package,
   using its ChatGPT icon and desktop metadata while preserving ChatGPT
   Community window, tray, and managed launcher synchronization.

@@ -71,7 +71,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y dpkg-dev gnupg
+          sudo apt-get install -y dpkg-dev gnupg patchelf
       - name: Resolve signed package
         id: upstream
         run: |
@@ -115,6 +115,37 @@ jobs:
           cmp "$upstream_root/usr/lib/chatgpt/resources/app.asar" "$CODEX_INSTALL_DIR/resources/app.asar"
           test -x "$CODEX_INSTALL_DIR/ChatGPT"
           test -x "$CODEX_INSTALL_DIR/resources/codex"
+      - name: Validate the Nix ELF contract against the official payload
+        env:
+          CODEX_INSTALL_DIR: ${{ github.workspace }}/codex-app-${{ matrix.architecture }}
+        run: |
+          set -euo pipefail
+          node nix/elf-runtime.cjs validate-upstream \
+            --root "$CODEX_INSTALL_DIR" \
+            --arch "${{ matrix.architecture }}"
+          fix_root="$(mktemp -d)"
+          cp -a "$CODEX_INSTALL_DIR/." "$fix_root/"
+          chmod -R u+w "$fix_root"
+          if [ "${{ matrix.architecture }}" = amd64 ]; then
+            dynamic_linker=/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-glibc/lib/ld-linux-x86-64.so.2
+          else
+            dynamic_linker=/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-glibc/lib/ld-linux-aarch64.so.1
+          fi
+          runtime_path=/nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-runtime/lib
+          node nix/elf-runtime.cjs fix \
+            --root "$fix_root" \
+            --arch "${{ matrix.architecture }}" \
+            --dynamic-linker "$dynamic_linker" \
+            --runtime-library-path "$runtime_path" \
+            --patchelf "$(command -v patchelf)" \
+            --chatgpt-relocator nix/relocate-elf-interpreter.cjs
+          node nix/elf-runtime.cjs audit \
+            --root "$fix_root" \
+            --arch "${{ matrix.architecture }}" \
+            --dynamic-linker "$dynamic_linker" \
+            --runtime-library-path "$runtime_path" \
+            --check-dependencies false \
+            --check-shebangs false
       - name: Audit every ASAR feature against the official bundle
         if: matrix.architecture == 'amd64'
         run: |

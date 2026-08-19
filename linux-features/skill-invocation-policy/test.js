@@ -80,9 +80,10 @@ function currentComposerRegistrationUiFixture() {
 
 function currentComposerTriggerFixture() {
   return [
-    "function U(e,t){let n=e.nodeBefore?.text,r=n?.match(K),o=r?.[1],s=r?.[2];",
-    "if(s==null||o!==`/`&&o!==`@`&&o!==`$`)return null;return{kind:t[o],query:s,trigger:o}}",
-    "var K=/(?:^|\\s)([/@$])([\\p{L}\\p{N}\\p{M}.:_/\\\\-]*)$/u;",
+    "function tIa(e,t){let n=e.nodeBefore?.text,r=n?.match(dIa),i=n?.match(fIa),s=r?.[1],c=r?.[2];",
+    "if(i!=null&&(s=`>`,c=i[1]),c==null||s!==`/`&&s!==`@`&&s!==`$`&&s!==`>`)return null;",
+    "return{kind:t[s],query:c,trigger:s}}",
+    "var dIa=/(?:^|\\s)([/@$>])([\\p{L}\\p{N}\\p{M}.:_/\\\\-]*)$/u,fIa=/(?:^|\\s)>([^\\s]*)$/u;",
   ].join("");
 }
 
@@ -272,6 +273,8 @@ test("composer patch supports the current split trigger and Skill menu chunks", 
     /invocationTrigger:Ge\.ui\?\.trigger\?\?`\$`,query:Ge\.ui\?\.query\?\?``/,
   );
   assert.match(trigger, new RegExp(COMPOSER_TRIGGER_PATCH_MARKER));
+  assert.match(trigger, /\(\[\/@\$>!\]\)/);
+  assert.match(trigger, /s!==`>`&&s!==`!`/);
   assert.doesNotMatch(trigger, new RegExp(COMPOSER_PATCH_MARKER));
   assert.equal(applySkillInvocationComposerPatch(registrationUi), registrationUi);
   assert.equal(applySkillInvocationComposerPatch(trigger), trigger);

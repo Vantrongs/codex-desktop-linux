@@ -26,6 +26,21 @@ function fixture() {
   ].join("");
 }
 
+function integratedFixture() {
+  return [
+    "async function index(){let p=await list({itemsView:`notLoaded`,sortDirection:`desc`});",
+    "if(p.nextCursor==null)return{items:r.reverse(),complete:!0};",
+    "return{items:r.reverse(),complete:!1}}",
+    "async function preview(){return list({itemsView:`full`,sortDirection:`desc`})}",
+    "const query={queryKey:[`prompt-rail-history`,threadId]};",
+    "function Thread({usesHistoryTimeline:timeline}){let voice=!1,mode=`paginated`,hidden=!1,kind=`root`,",
+    "history=timeline&&!voice,paginated=history&&mode===`paginated`,",
+    "rail=history&&(mode===`paginated`||mode===`legacy`&&compatible(root))&&!hidden&&kind!==`subagent`,",
+    "{data:indexData}=use(query,rail?threadId:null),complete=rail&&indexData?.complete===!0;",
+    "return build({historyItems:indexData.items,complete,paginated})}",
+  ].join("");
+}
+
 test("paginated thread navigation uses the complete metadata index without a remote flag", () => {
   const source = fixture();
   assert.equal(isThreadNavigationHistoryIndexAsset(source), true);
@@ -71,6 +86,30 @@ test("navigation patch rejects marker-only and semantically damaged output", () 
   );
 });
 
+test("upstream integrated metadata navigation is accepted without rewriting", () => {
+  const source = integratedFixture();
+  assert.equal(isThreadNavigationHistoryIndexAsset(source), true);
+  assert.equal(applyLinuxThreadNavigationHistoryIndexPatch(source), source);
+  assert.equal(
+    isThreadNavigationHistoryIndexAsset(
+      source.replace("mode===`paginated`||", "mode!==`paginated`||"),
+    ),
+    false,
+  );
+  assert.equal(
+    isThreadNavigationHistoryIndexAsset(
+      source.replace("complete===!0", "complete!==!0"),
+    ),
+    false,
+  );
+  assert.equal(
+    isThreadNavigationHistoryIndexAsset(
+      source.replace("kind!==`subagent`", "kind===`subagent`"),
+    ),
+    false,
+  );
+});
+
 test(
   "current upstream bundle has the guarded metadata navigation index",
   { skip: process.env.CODEX_WEBVIEW_ASSET == null },
@@ -78,13 +117,13 @@ test(
     const source = fs.readFileSync(process.env.CODEX_WEBVIEW_ASSET, "utf8");
     assert.equal(isThreadNavigationHistoryIndexAsset(source), true);
     const patched = applyLinuxThreadNavigationHistoryIndexPatch(source);
-    assert.equal(hasInstalledThreadNavigationHistoryIndex(patched), true);
-
-    const wrongHistoryMode = patched.replace(
-      /(=\(void`codexLinuxThreadNavigationUsesHistoryIndex`,!0\)[\s\S]{0,300}?[A-Za-z_$][\w$]*==null&&[A-Za-z_$][\w$]*)===`paginated`/u,
-      "$1!==`paginated`",
-    );
+    const wrongHistoryMode = patched.includes(THREAD_NAVIGATION_HISTORY_INDEX_MARKER)
+      ? patched.replace(
+        /(=\(void`codexLinuxThreadNavigationUsesHistoryIndex`,!0\)[\s\S]{0,300}?[A-Za-z_$][\w$]*==null&&[A-Za-z_$][\w$]*)===`paginated`/u,
+        "$1!==`paginated`",
+      )
+      : patched.replace(/(=[A-Za-z_$][\w$]*&&\()[A-Za-z_$][\w$]*===`paginated`/u, "$1mode!==`paginated`");
     assert.notEqual(wrongHistoryMode, patched);
-    assert.equal(hasInstalledThreadNavigationHistoryIndex(wrongHistoryMode), false);
+    assert.equal(isThreadNavigationHistoryIndexAsset(wrongHistoryMode), false);
   },
 );
