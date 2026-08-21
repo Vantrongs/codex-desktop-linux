@@ -97,7 +97,7 @@ module.exports = [
     id: "linux-thread-virtualizer-layout-stability",
     order: 20_140,
     ciPolicy: CI_POLICY_REQUIRED_UPSTREAM,
-    pattern: /^open-sources-side-panel-tab-[^.]+\.js$/,
+    pattern: /^(?:conversation-source|open-sources-side-panel-tab)-[^.]+\.js$/,
     assetMatch: isThreadVirtualizerLayoutAsset,
     missingDescription: "thread virtualizer webview bundle",
     skipDescription: "Linux thread virtualizer layout stability patch",

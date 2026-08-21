@@ -272,18 +272,7 @@
               -C "$out/lib/node_modules/watchbound" --strip-components=1
             tar -xzf ${watchboundLoaderArchive} \
               -C "$out/lib/node_modules/@gadicc/watchbound-node" --strip-components=1
-            # Apply the one explicit downstream compatibility delta for the
-            # signed app's Node 24.14. The package verifier pins the adjusted
-            # loader hash separately from the upstream artifact manifest, and
-            # the maximal check exercises its lifecycle with that CUA runtime.
-            substituteInPlace \
-              "$out/lib/node_modules/@gadicc/watchbound-node/native-matrix.json" \
-              --replace-fail '"nodeRange": ">=24.15.0 <25"' '"nodeRange": ">=24.14.0 <25"' \
-              --replace-fail '"nodeMinimum": "24.15.0"' '"nodeMinimum": "24.14.0"'
-            grep -q '"nodeMinimum": "24.14.0"' \
-              "$out/lib/node_modules/@gadicc/watchbound-node/native-matrix.json"
-            CODEX_WATCHBOUND_NIX_NODE_24_14=1 \
-              node ${sourceRoot}/linux-features/directory-only-working-tree-watch/watchbound-package.js \
+            node ${sourceRoot}/linux-features/directory-only-working-tree-watch/watchbound-package.js \
               --verify-controlled-package-root "$out/lib/node_modules" ${watchboundTarget.electronArch}
             runHook postInstall
           '';
@@ -369,7 +358,6 @@
               ''}
               ${lib.optionalString watchboundEnabled ''
               export CODEX_WATCHBOUND_PACKAGE_ROOT="${watchboundPackage}/lib/node_modules"
-              export CODEX_WATCHBOUND_NIX_NODE_24_14=1
               ''}
               bash "$source_dir/install.sh" "${upstreamDeb}"
 
@@ -415,7 +403,7 @@
                 --prefix XDG_DATA_DIRS : "${gsettingsSchemaDataDirs}" \
                 --set-default BAMF_DESKTOP_FILE_HINT "$out/share/applications/codex-desktop.desktop" \
                 --set-default CODEX_CLI_PATH "$app/resources/codex" \
-                --add-flags "\''${NIXOS_OZONE_WL:+\''${WAYLAND_DISPLAY:+--ozone-platform=wayland --enable-wayland-ime=true --wayland-text-input-version=3}}"
+                --run 'if [ -n "''${NIXOS_OZONE_WL-}" ] && [ -n "''${WAYLAND_DISPLAY-}" ]; then set -- "$@" --ozone-platform=wayland --enable-wayland-ime=true --wayland-text-input-version=3; fi'
               node "$source_dir/nix/elf-runtime.cjs" audit \
                 --root "$app" \
                 --arch ${officialPackage.architecture} \
@@ -613,7 +601,6 @@
             export CODEX_GLOBAL_DICTATION_LINUX_SOURCE="${globalDictationHelper}/bin/codex-global-dictation-linux"
             export CODEX_MCP_HELPER_REAPER_SOURCE="${mcpReaperHelper}/bin/codex-mcp-helper-reaper"
             export CODEX_WATCHBOUND_PACKAGE_ROOT="${watchboundPackage}/lib/node_modules"
-            export CODEX_WATCHBOUND_NIX_NODE_24_14=1
             upstream_contract_root="$(mktemp -d)"
             dpkg-deb -x ${upstreamDeb} "$upstream_contract_root"
             node ${sourceRoot}/nix/elf-runtime.cjs validate-upstream \
@@ -741,7 +728,7 @@
           ${pkgs.gnugrep}/bin/grep -Fx 'path=${runtimePathFor package.passthru.effectiveLinuxFeatureIds}:/caller/bin' "$capture"
           ${pkgs.gnugrep}/bin/grep -Fx 'ld=x:/caller/lib' "$capture"
           ${pkgs.gnugrep}/bin/grep -Fx \
-            'args=<--ozone-platform=wayland><--enable-wayland-ime=true><--wayland-text-input-version=3><--diagnose>' \
+            'args=<--diagnose><--ozone-platform=wayland><--enable-wayland-ime=true><--wayland-text-input-version=3>' \
             "$capture"
           ${pkgs.coreutils}/bin/env ALSA_PLUGIN_DIR=/caller/alsa XDG_DATA_DIRS=/caller/share \
             BAMF_DESKTOP_FILE_HINT=/caller/desktop LD_LIBRARY_PATH= \
@@ -751,6 +738,11 @@
           ${pkgs.gnugrep}/bin/grep -Fx 'xdg=x:${gsettingsSchemaDataDirs}:/caller/share' "$capture"
           ${pkgs.gnugrep}/bin/grep -Fx 'ld=x:' "$capture"
           ${pkgs.gnugrep}/bin/grep -Fx 'bamf=/caller/desktop' "$capture"
+          diagnose_output="$(${pkgs.coreutils}/bin/env \
+            -u BASH_ENV -u CODEX_NIX_ENV_CAPTURE \
+            NIXOS_OZONE_WL=1 WAYLAND_DISPLAY=wayland-1 \
+            ${package}/bin/codex-desktop --diagnose)"
+          test "$(printf '%s\n' "$diagnose_output" | ${pkgs.gnugrep}/bin/grep -c '^ok: ')" -eq 5
         '';
         mkRuntimeCheck = name: package: verifyBundledMarketplacePermissions: verifyWatchbound:
           pkgs.runCommand name {
