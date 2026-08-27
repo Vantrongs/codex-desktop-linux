@@ -811,12 +811,19 @@ function applyLinuxRemoteMobileChromeBridgePatch(source) {
 }
 
 function browserClientHasNativeChromeBackendPreferenceRouting(source) {
-  return (
+  const hasPreferenceRouting =
     source.includes("BROWSER_USE_AVAILABLE_BACKENDS") &&
     source.includes("browserPreference") &&
     source.includes("preferredWindowIdFor") &&
-    /var [A-Za-z_$][\w$]*=\["chrome","iab","cdp"\];function [A-Za-z_$][\w$]*\([A-Za-z_$][\w$]*\)\{return [A-Za-z_$][\w$]*\.some\([A-Za-z_$][\w$]*=>[A-Za-z_$][\w$]*===[A-Za-z_$][\w$]*\)\}/u.test(source)
-  );
+    /var [A-Za-z_$][\w$]*=\["chrome","iab","cdp"\];function [A-Za-z_$][\w$]*\([A-Za-z_$][\w$]*\)\{return [A-Za-z_$][\w$]*\.some\([A-Za-z_$][\w$]*=>[A-Za-z_$][\w$]*===[A-Za-z_$][\w$]*\)\}/u.test(source);
+  const hasCommandTransportRouting =
+    source.includes("list_browsers") &&
+    source.includes("get_default_browser") &&
+    source.includes("get_browser_for_url") &&
+    source.includes("FunctionAgentTransport") &&
+    /[A-Za-z_$][\w$]*\.enum\(\["iab","extension","cdp"\]\)/u.test(source);
+
+  return hasPreferenceRouting || hasCommandTransportRouting;
 }
 
 function applyLinuxRemoteMobileConversationHydrationPatch(source) {
