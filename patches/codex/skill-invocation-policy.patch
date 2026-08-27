@@ -186,12 +186,16 @@ diff --git a/app-server-protocol/schema/typescript/v2/SkillMetadata.ts b/app-ser
 index e43484d..4d0d68f 100644
 --- a/app-server-protocol/schema/typescript/v2/SkillMetadata.ts
 +++ b/app-server-protocol/schema/typescript/v2/SkillMetadata.ts
-@@ -10,4 +10,4 @@ export type SkillMetadata = { name: string, description: string,
+@@ -10,8 +10,8 @@ export type SkillMetadata = { name: string, description: string,
  /**
   * Legacy short_description from SKILL.md. Prefer SKILL.json interface.short_description.
   */
--shortDescription?: string, interface?: SkillInterface, dependencies?: SkillDependencies, path: AbsolutePathBuf, scope: SkillScope, enabled: boolean, };
-+shortDescription?: string, interface?: SkillInterface, dependencies?: SkillDependencies, path: AbsolutePathBuf, scope: SkillScope, enabled: boolean, allowImplicitInvocation: boolean, };
+-shortDescription?: string, interface?: SkillInterface, dependencies?: SkillDependencies, path: AbsolutePathBuf, scope: SkillScope, enabled: boolean,
++shortDescription?: string, interface?: SkillInterface, dependencies?: SkillDependencies, path: AbsolutePathBuf, scope: SkillScope, enabled: boolean, allowImplicitInvocation: boolean,
+ /**
+  * Owning plugin ID, matching `PluginSummary.id`, when known.
+  */
+ pluginId: string | null, };
 diff --git a/app-server-protocol/schema/typescript/v2/SkillSummary.ts b/app-server-protocol/schema/typescript/v2/SkillSummary.ts
 index 4999a07..03208f7 100644
 --- a/app-server-protocol/schema/typescript/v2/SkillSummary.ts
@@ -221,9 +225,9 @@ index e0f521b..d661ddf 100644
      pub scope: SkillScope,
      pub enabled: bool,
 +    pub allow_implicit_invocation: bool,
+     /// Owning plugin ID, matching `PluginSummary.id`, when known.
+     pub plugin_id: Option<String>,
  }
-
- #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 @@ -795,6 +796,7 @@ pub struct SkillSummary {
      pub interface: Option<SkillInterface>,
      pub path: Option<AbsolutePathBuf>,
@@ -232,32 +236,31 @@ index e0f521b..d661ddf 100644
  }
 
  #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
-@@ -873,6 +875,8 @@ pub struct SkillsConfigWriteParams {
+@@ -892,4 +894,6 @@ pub struct SkillsConfigWriteParams {
      #[ts(optional = nullable)]
      pub name: Option<String>,
      pub enabled: bool,
 +    #[ts(optional = nullable)]
 +    pub allow_implicit_invocation: Option<bool>,
  }
-
- #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
-@@ -924,6 +928,7 @@ impl From<CoreSkillMetadata> for SkillMetadata {
+@@ -948,6 +952,7 @@ impl From<CoreSkillMetadata> for SkillMetadata {
              path: value.path,
              scope: value.scope.into(),
              enabled: true,
 +            allow_implicit_invocation: true,
+             plugin_id: None,
          }
      }
- }
 diff --git a/app-server/src/request_processors/catalog_processor.rs b/app-server/src/request_processors/catalog_processor.rs
 index 4d80271..5edd0c9 100644
 --- a/app-server/src/request_processors/catalog_processor.rs
 +++ b/app-server/src/request_processors/catalog_processor.rs
-@@ -58,6 +58,7 @@ fn skills_to_info(
+@@ -58,7 +58,8 @@ fn skills_to_info(
                  path: skill.path_to_skills_md.clone(),
                  scope: skill.scope.into(),
                  enabled,
 +                allow_implicit_invocation: skill.allows_implicit_invocation(),
+                 plugin_id: skill.plugin_id.clone(),
              }
          })
          .collect()
@@ -892,35 +895,39 @@ diff --git a/tui/src/bottom_pane/chat_composer.rs b/tui/src/bottom_pane/chat_com
 index 9574b61..f41f547 100644
 --- a/tui/src/bottom_pane/chat_composer.rs
 +++ b/tui/src/bottom_pane/chat_composer.rs
-@@ -6748,6 +6748,7 @@ mod tests {
+@@ -6748,7 +6748,8 @@ mod tests {
              path: test_path_buf(&format!("/tmp/{name}/SKILL.md")).abs(),
              scope: crate::test_support::skill_scope_user(),
              enabled: true,
 +            allow_implicit_invocation: true,
+             plugin_id: None,
          }
      }
 
-@@ -7399,6 +7400,7 @@ mod tests {
+@@ -7399,7 +7400,8 @@ mod tests {
              path: skill_path.clone(),
              scope: crate::test_support::skill_scope_user(),
              enabled: true,
 +            allow_implicit_invocation: true,
+             plugin_id: None,
          }]));
 
          let ActivePopup::Skill(popup) = &composer.popups.active else {
-@@ -7443,6 +7445,7 @@ mod tests {
+@@ -7443,7 +7445,8 @@ mod tests {
              path: skill_path.clone(),
              scope: crate::test_support::skill_scope_repo(),
              enabled: true,
 +            allow_implicit_invocation: true,
+             plugin_id: Some("google-calendar@debug".to_string()),
          }]));
          composer.set_plugin_mentions(Some(vec![PluginCapabilitySummary {
              config_name: "google-calendar@debug".to_string(),
-@@ -7630,6 +7633,7 @@ mod tests {
+@@ -7630,7 +7633,8 @@ mod tests {
                      path: test_path_buf("/tmp/repo/google-calendar/SKILL.md").abs(),
                      scope: crate::test_support::skill_scope_repo(),
                      enabled: true,
 +                    allow_implicit_invocation: true,
+                     plugin_id: None,
                  }]));
                  composer.set_plugin_mentions(Some(vec![PluginCapabilitySummary {
                  config_name: "google-calendar@debug".to_string(),
@@ -928,11 +935,12 @@ diff --git a/tui/src/bottom_pane/mod.rs b/tui/src/bottom_pane/mod.rs
 index 527e510..49df42d 100644
 --- a/tui/src/bottom_pane/mod.rs
 +++ b/tui/src/bottom_pane/mod.rs
-@@ -2686,6 +2686,7 @@ mod tests {
+@@ -2686,7 +2686,8 @@ mod tests {
                  path: test_path_buf("/tmp/test-skill/SKILL.md").abs(),
                  scope: crate::test_support::skill_scope_user(),
                  enabled: true,
 +                allow_implicit_invocation: true,
+                 plugin_id: None,
              }]),
          });
 
@@ -940,19 +948,21 @@ diff --git a/tui/src/chatwidget/tests/composer_submission.rs b/tui/src/chatwidge
 index 49fa1dd..ad5c24e 100644
 --- a/tui/src/chatwidget/tests/composer_submission.rs
 +++ b/tui/src/chatwidget/tests/composer_submission.rs
-@@ -695,6 +695,7 @@ async fn submission_prefers_selected_duplicate_skill_path() {
+@@ -695,7 +695,8 @@ async fn submission_prefers_selected_duplicate_skill_path() {
              path: repo_skill_path,
              scope: crate::test_support::skill_scope_repo(),
              enabled: true,
 +            allow_implicit_invocation: true,
+             plugin_id: None,
          },
          SkillMetadata {
              name: "figma".to_string(),
-@@ -705,6 +706,7 @@ async fn submission_prefers_selected_duplicate_skill_path() {
+@@ -705,7 +706,8 @@ async fn submission_prefers_selected_duplicate_skill_path() {
              path: user_skill_path.clone(),
              scope: crate::test_support::skill_scope_user(),
              enabled: true,
 +            allow_implicit_invocation: true,
+             plugin_id: None,
          },
      ]));
 
