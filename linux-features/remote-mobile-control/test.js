@@ -322,6 +322,14 @@ function syntheticModernChromeBrowserClientBundle() {
   ].join("");
 }
 
+function syntheticCommandTransportBrowserClientBundle() {
+  return [
+    'var browserType=r.enum(["iab","extension","cdp"]);',
+    'var listBrowsers="list_browsers",getDefaultBrowser="get_default_browser",getBrowserForUrl="get_browser_for_url";',
+    "class FunctionAgentTransport{async send(request){return request}}",
+  ].join("");
+}
+
 function syntheticCurrentAppServerManagerSignalsBundle() {
   return [
     "function Of({conversationId:e,conversations:t,getWorkspaceBrowserRoot:n,getWorkspaceKind:r,hostId:i,setConversation:a,thread:o,threadsById:s,updateConversationState:c}){let h=o.status??null;if(t.has(e)){c(e,e=>{e.resumeState===`needs_resume`&&(e.threadRuntimeStatus=h)});return}}",
@@ -1794,6 +1802,14 @@ test("Linux remote mobile Chrome bridge patch handles current browser-client bac
 
 test("Linux remote mobile Chrome bridge patch no-ops on upstream browser preference routing", () => {
   const source = syntheticModernChromeBrowserClientBundle();
+  const { result, warnings } = captureWarnings(() => applyLinuxRemoteMobileChromeBridgePatch(source));
+
+  assert.equal(result, source);
+  assert.deepEqual(warnings, []);
+});
+
+test("Linux remote mobile Chrome bridge patch no-ops on the command transport Browser API", () => {
+  const source = syntheticCommandTransportBrowserClientBundle();
   const { result, warnings } = captureWarnings(() => applyLinuxRemoteMobileChromeBridgePatch(source));
 
   assert.equal(result, source);
