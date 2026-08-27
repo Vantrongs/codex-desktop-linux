@@ -10,6 +10,7 @@ const {
   classifySubagentRuntimeStatus,
   hasUnsafeSubagentRuntimeStatusInference,
   isSubagentRuntimeStatusAsset,
+  isUpstreamSafeSubagentRuntimeStatusAsset,
 } = require("./subagent-runtime-status.js");
 
 function fixture() {
@@ -22,6 +23,15 @@ function fixture() {
     "x=c===`active`||c===`unknown`&&s===`active`,w=!x&&(c===`done`||s===`done`);",
     "return{status:w?`done`:`active`,statusSummary:x?summary(n):null,showInlineActivity:e.showInlineActivity}}",
     "function TurnState(e){return e?.threadRuntimeStatus?.type===`active`?`inProgress`:e?.threadRuntimeStatus!=null&&e.threadRuntimeStatus.type!==`notLoaded`?`notInProgress`:e==null||e.turns.length===0?`unknown`:e.turns[e.turns.length-1]?.status===`inProgress`?`inProgress`:`notInProgress`}",
+  ].join("");
+}
+
+function upstreamSafeFixture() {
+  return [
+    "function Project({membership:e,latestReference:t,childConversation:n,currentParentTurnKey:r,discoveryComplete:i,runtimeStatus:a}){",
+    "let o=mapAgent(t.agentState?.status),l=turnState(n),u;",
+    "u=a==null?i?`done`:l===`inProgress`?`active`:l===`notInProgress`?`done`:o===`waiting`?`waiting`:o===`done`?`done`:`active`:a.type===`active`?`active`:`done`;",
+    "return{status:u,statusSummary:u===`active`?summary(n):null,showInlineActivity:e.showInlineActivity}}",
   ].join("");
 }
 
@@ -107,14 +117,22 @@ test("subagent status patch rejects partial installed output", () => {
   );
 });
 
+test("upstream-safe projection needs no injected runtime-status patch", () => {
+  const source = upstreamSafeFixture();
+  assert.equal(isSubagentRuntimeStatusAsset(source), true);
+  assert.equal(isUpstreamSafeSubagentRuntimeStatusAsset(source), true);
+  assert.equal(hasUnsafeSubagentRuntimeStatusInference(source), false);
+  assert.equal(applyLinuxSubagentRuntimeStatusPatch(source), source);
+});
+
 test(
-  "current upstream bundle misclassifies notLoaded historical agents",
+  "current upstream bundle keeps non-active canonical runtime statuses done",
   { skip: process.env.CODEX_WEBVIEW_ASSET == null },
   () => {
     const source = fs.readFileSync(process.env.CODEX_WEBVIEW_ASSET, "utf8");
     assert.equal(isSubagentRuntimeStatusAsset(source), true);
-    assert.equal(hasUnsafeSubagentRuntimeStatusInference(source), true);
-    const patched = applyLinuxSubagentRuntimeStatusPatch(source);
-    assert.equal(hasUnsafeSubagentRuntimeStatusInference(patched), false);
+    assert.equal(isUpstreamSafeSubagentRuntimeStatusAsset(source), true);
+    assert.equal(hasUnsafeSubagentRuntimeStatusInference(source), false);
+    assert.equal(applyLinuxSubagentRuntimeStatusPatch(source), source);
   },
 );

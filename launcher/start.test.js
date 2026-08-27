@@ -9,6 +9,20 @@ const test = require("node:test");
 
 const templatePath = path.join(__dirname, "start.sh.template");
 
+function findExecutable(name) {
+  for (const directory of (process.env.PATH || "").split(path.delimiter)) {
+    if (!directory) continue;
+    const candidate = path.join(directory, name);
+    try {
+      fs.accessSync(candidate, fs.constants.X_OK);
+      return candidate;
+    } catch {
+      // Keep searching the declared test environment.
+    }
+  }
+  throw new Error(`required executable is missing from PATH: ${name}`);
+}
+
 // Launcher tests must never contact the production usage counter. Individual
 // reporting tests opt back in with an isolated fake curl executable.
 process.env.CODEX_LINUX_DISABLE_USAGE_REPORTING = "1";
@@ -30,7 +44,7 @@ function createApp(t) {
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, "fixture", { mode: relative === "resources/app.asar" ? 0o644 : 0o755 });
   }
-  writeExecutable(path.join(root, "ChatGPT"), `#!/bin/bash
+  writeExecutable(path.join(root, "ChatGPT"), `#!/usr/bin/env bash
 printf '%s\n' "$CHROME_DESKTOP" "$BAMF_DESKTOP_FILE_HINT" "$HOOK_ENV" "$LAUNCHER_ENV" > "$TEST_ROOT/environment"
 printf '%s\n' "$@" > "$TEST_ROOT/arguments"
 exit 7
@@ -52,7 +66,7 @@ test("launcher reports only one anonymous usage event per UTC day", (t) => {
   const callsPath = path.join(root, "curl-calls");
   writeExecutable(
     path.join(binDir, "curl"),
-    `#!/bin/bash
+    `#!/usr/bin/env bash
 printf 'call\\n' >> "$TEST_ROOT/curl-calls"
 printf '<%s>\\n' "$@" >> "$TEST_ROOT/curl-arguments"
 `,
@@ -94,7 +108,7 @@ test("launcher usage reporting has one opt-out and suppresses curl failures", (t
   const disabledBin = path.join(disabledRoot, "bin");
   writeExecutable(
     path.join(disabledBin, "curl"),
-    `#!/bin/bash
+    `#!/usr/bin/env bash
 printf 'unexpected\\n' >> "$TEST_ROOT/curl-calls"
 `,
   );
@@ -117,7 +131,8 @@ printf 'unexpected\\n' >> "$TEST_ROOT/curl-calls"
   const missingRoot = createApp(t);
   const missingBin = path.join(missingRoot, "bin");
   fs.mkdirSync(missingBin, { recursive: true });
-  fs.symlinkSync("/usr/bin/dirname", path.join(missingBin, "dirname"));
+  fs.symlinkSync(findExecutable("bash"), path.join(missingBin, "bash"));
+  fs.symlinkSync(findExecutable("dirname"), path.join(missingBin, "dirname"));
   const missing = childProcess.spawnSync(path.join(missingRoot, "start.sh"), [], {
     env: {
       ...process.env,
@@ -138,7 +153,7 @@ printf 'unexpected\\n' >> "$TEST_ROOT/curl-calls"
   const failingBin = path.join(failingRoot, "bin");
   writeExecutable(
     path.join(failingBin, "curl"),
-    `#!/bin/bash
+    `#!/usr/bin/env bash
 printf 'simulated curl failure\\n' >&2
 exit 22
 `,
@@ -166,9 +181,9 @@ test("launcher composes declarative hooks and forwards arguments", (t) => {
   fs.writeFileSync(path.join(hooks, "env.d", "fixture.env"), "HOOK_ENV=from-env\n");
   fs.mkdirSync(path.join(hooks, "electron-args.d"), { recursive: true });
   fs.writeFileSync(path.join(hooks, "electron-args.d", "fixture.args"), "# comment\n--feature-arg=one two\n");
-  writeExecutable(path.join(hooks, "prelaunch.d", "fixture.sh"), "#!/bin/bash\nprintf prelaunch > \"$TEST_ROOT/prelaunch\"\n");
-  writeExecutable(path.join(hooks, "launcher.d", "fixture.sh"), "#!/bin/bash\nprintf '%s\\n' 'env LAUNCHER_ENV=from-launcher' 'electron-arg --launcher-arg=value'\n");
-  writeExecutable(path.join(hooks, "after-exit.d", "fixture.sh"), "#!/bin/bash\nprintf after-exit > \"$TEST_ROOT/after-exit\"\n");
+  writeExecutable(path.join(hooks, "prelaunch.d", "fixture.sh"), "#!/usr/bin/env bash\nprintf prelaunch > \"$TEST_ROOT/prelaunch\"\n");
+  writeExecutable(path.join(hooks, "launcher.d", "fixture.sh"), "#!/usr/bin/env bash\nprintf '%s\\n' 'env LAUNCHER_ENV=from-launcher' 'electron-arg --launcher-arg=value'\n");
+  writeExecutable(path.join(hooks, "after-exit.d", "fixture.sh"), "#!/usr/bin/env bash\nprintf after-exit > \"$TEST_ROOT/after-exit\"\n");
 
   const env = {
     ...process.env,
@@ -214,7 +229,7 @@ test("launcher loads global and app-specific Electron flags", (t) => {
   );
   writeExecutable(
     path.join(root, ".codex-linux", "launcher.d", "capture-args.sh"),
-    "#!/bin/bash\nprintf '%s\\n' \"$@\" > \"$TEST_ROOT/launcher-hook-arguments\"\n",
+    "#!/usr/bin/env bash\nprintf '%s\\n' \"$@\" > \"$TEST_ROOT/launcher-hook-arguments\"\n",
   );
 
   const result = childProcess.spawnSync(

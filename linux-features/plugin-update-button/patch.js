@@ -102,7 +102,7 @@ function hasInstalledPluginUpdateButton(source) {
   const parentActionPattern = new RegExp(
     `isUninstalling:(${JS_IDENT})\\|\\|${PARENT_BUSY_STATE},` +
       `isUpdatingEnabled:(${JS_IDENT}),[^{}]{0,500}?shareActions:` +
-      `\\(0,(${JS_IDENT})\\.jsx\\)\\(${COMPONENT_NAME},\\{` +
+      `[\\s\\S]{0,180}?\\(0,(${JS_IDENT})\\.jsx\\)\\(${COMPONENT_NAME},\\{` +
       `hostId:(${JS_IDENT}),installed:(${JS_IDENT})\\.summary\\.installed,` +
       `isBusy:\\1\\|\\|\\2\\|\\|${PARENT_BUSY_STATE},` +
       `marketplaceName:\\5\\.marketplaceName,` +
@@ -201,7 +201,7 @@ function findReactCompiledPluginDetailBinding(source) {
   const functionPattern = new RegExp(`function (${JS_IDENT})\\((${JS_IDENT})\\)\\{`, "g");
   const actionPattern = new RegExp(
     `isUninstalling:(${JS_IDENT}),isUpdatingEnabled:(${JS_IDENT}),` +
-      `([^{}]{0,500}?)shareActions:null`,
+      `([^{}]{0,500}?)shareActions:(null|${JS_IDENT})`,
   );
   const candidates = [];
   let functionMatch;
@@ -329,6 +329,7 @@ function findReactCompiledPluginDetailBinding(source) {
     requestClientExpression: hasCurrentRequestClient
       ? `${requestFactoryMatch[1]}(${requestScopeMatch[1]},${hostIdVar})`
       : null,
+    shareActionsExpression: actionMatch[4],
     refreshVar: uniqueRefreshEventVars[0],
     stateAnchor: header,
     stateReplacement:
@@ -369,6 +370,7 @@ function applyPluginUpdateButtonPatch(source) {
     reactVar,
     refreshVar,
     requestClientExpression,
+    shareActionsExpression = "null",
     stateAnchor,
     stateReplacement,
     start,
@@ -379,11 +381,8 @@ function applyPluginUpdateButtonPatch(source) {
     throw new Error("Plugin detail share-action anchor was not unique");
   }
 
-  const action =
-    `isUninstalling:${busyVars[0]}||${PARENT_BUSY_STATE},` +
-    `isUpdatingEnabled:${busyVars[1]},` +
-    `${actionInfix ?? ""}` +
-    `shareActions:(0,${jsxVar}.jsx)(${COMPONENT_NAME},{hostId:${hostIdVar},` +
+  const updateAction =
+    `(0,${jsxVar}.jsx)(${COMPONENT_NAME},{hostId:${hostIdVar},` +
     `installed:${pluginVar}.summary.installed,` +
     `isBusy:${busyVars.join("||")}||${PARENT_BUSY_STATE},` +
     `marketplaceName:${pluginVar}.marketplaceName,` +
@@ -392,6 +391,14 @@ function applyPluginUpdateButtonPatch(source) {
     `onBusyChange:${PARENT_BUSY_SETTER},onUpdated:${refreshVar}` +
     `${requestClientExpression == null ? "" : `,requestClient:${requestClientExpression}`}` +
     `})`;
+  const shareActions = shareActionsExpression === "null"
+    ? updateAction
+    : `(0,${jsxVar}.jsxs)(${jsxVar}.Fragment,{children:[${updateAction},${shareActionsExpression}]})`;
+  const action =
+    `isUninstalling:${busyVars[0]}||${PARENT_BUSY_STATE},` +
+    `isUpdatingEnabled:${busyVars[1]},` +
+    `${actionInfix ?? ""}` +
+    `shareActions:${shareActions}`;
   const patchedBlock = block
     .replace(stateAnchor, stateReplacement)
     .replace(anchor, action);

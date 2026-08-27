@@ -262,6 +262,31 @@ test("patches the official Linux app-server plugin detail component", () => {
   assert.match(patched, /v\.sendRequest\(`plugin\/install`,\{marketplacePath:a,pluginName:o\}\)/);
 });
 
+test("composes the update button with an existing plugin share action", () => {
+  const source = currentPluginDetailFixture().replace("shareActions:null", "shareActions:Ga");
+  const patched = applyPluginUpdateButtonPatch(source);
+
+  assert.notEqual(patched, source);
+  assert.equal(applyPluginUpdateButtonPatch(patched), patched);
+  assert.match(
+    patched,
+    /shareActions:\(0,\$\.jsxs\)\(\$\.Fragment,\{children:\[\(0,\$\.jsx\)\(codexLinuxGitPluginUpdateButton,[^\]]+,Ga\]\}\)/u,
+  );
+});
+
+test(
+  "patches the current official Linux plugin detail without replacing its share action",
+  { skip: process.env.CODEX_PLUGIN_DETAIL_ASSET == null },
+  () => {
+    const source = fs.readFileSync(process.env.CODEX_PLUGIN_DETAIL_ASSET, "utf8");
+    const patched = applyPluginUpdateButtonPatch(source);
+
+    assert.notEqual(patched, source);
+    assert.equal(applyPluginUpdateButtonPatch(patched), patched);
+    assert.match(patched, /children:\[\(0,\$\.jsx\)\(codexLinuxGitPluginUpdateButton,[^\]]+,Ga\]\}/u);
+  },
+);
+
 test("patch fails closed when refetch belongs to a neighboring callback", () => {
   const source = currentPluginDetailFixture().replace(
     "Vt=async()=>{await uu({hostId:B,invalidateQueriesAndBroadcast:O,marketplacePath:U,pluginName:o,refetchPluginDetail:ft})},Ht=(0,fu.useEffectEvent)(Vt),",

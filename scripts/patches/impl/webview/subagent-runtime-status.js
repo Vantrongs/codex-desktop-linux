@@ -27,6 +27,13 @@ const PROJECTION_PATTERN = new RegExp(
     `runtimeStatus:(${IDENTIFIER})\\}\\)\\{`,
   "gu",
 );
+const UPSTREAM_SAFE_PROJECTION_PATTERN = new RegExp(
+  `function (${IDENTIFIER})\\(\\{membership:(${IDENTIFIER}),` +
+    `latestReference:(${IDENTIFIER}),childConversation:(${IDENTIFIER}),` +
+    `currentParentTurnKey:(${IDENTIFIER}),discoveryComplete:(${IDENTIFIER}),` +
+    `runtimeStatus:(${IDENTIFIER})\\}\\)\\{`,
+  "gu",
+);
 const UNSAFE_TURN_STATE_PATTERN = new RegExp(
   `function (${IDENTIFIER})\\((${IDENTIFIER})\\)\\{return \\2\\?\\.threadRuntimeStatus` +
     `\\?\\.type===\`active\`\\?\`inProgress\`:` +
@@ -129,6 +136,38 @@ function findProjectionContracts(source, { installed }) {
   return contracts;
 }
 
+function findUpstreamSafeProjectionContracts(source) {
+  const contracts = [];
+  for (const fn of findFunctions(source, UPSTREAM_SAFE_PROJECTION_PATTERN)) {
+    const discoveryAlias = fn.match[6];
+    const runtimeAlias = fn.match[7];
+    const statusPattern = new RegExp(
+      `(${IDENTIFIER})=${runtimeAlias.replace(/[$]/gu, "\\$")}==null\\?` +
+        `${discoveryAlias.replace(/[$]/gu, "\\$")}\\?\`done\`:` +
+        `(${IDENTIFIER})===\`inProgress\`\\?\`active\`:\\2===\`notInProgress\`` +
+        `\\?\`done\`:(${IDENTIFIER})===\`waiting\`\\?\`waiting\`:` +
+        `\\3===\`done\`\\?\`done\`:\`active\`:` +
+        `${runtimeAlias.replace(/[$]/gu, "\\$")}\\.type===\`active\`` +
+        `\\?\`active\`:\`done\``,
+      "u",
+    );
+    const status = statusPattern.exec(fn.text);
+    if (status == null) continue;
+    const statusAlias = status[1];
+    if (
+      !fn.text.includes(`status:${statusAlias},statusSummary:${statusAlias}===\`active\`?`)
+    ) {
+      continue;
+    }
+    contracts.push({ fn, status });
+  }
+  return contracts;
+}
+
+function isUpstreamSafeSubagentRuntimeStatusAsset(source) {
+  return findUpstreamSafeProjectionContracts(source).length === 1;
+}
+
 function matchAll(source, pattern) {
   return [...source.matchAll(new RegExp(pattern.source, "gu"))];
 }
@@ -151,9 +190,12 @@ function isSubagentRuntimeStatusAsset(source) {
     return hasInstalledSubagentRuntimeStatus(source);
   }
   return (
-    findBuilderContracts(source, { installed: false }).length === 1 &&
-    findProjectionContracts(source, { installed: false }).length === 1 &&
-    matchAll(source, UNSAFE_TURN_STATE_PATTERN).length === 1
+    isUpstreamSafeSubagentRuntimeStatusAsset(source) ||
+    (
+      findBuilderContracts(source, { installed: false }).length === 1 &&
+      findProjectionContracts(source, { installed: false }).length === 1 &&
+      matchAll(source, UNSAFE_TURN_STATE_PATTERN).length === 1
+    )
   );
 }
 
@@ -161,6 +203,7 @@ function hasUnsafeSubagentRuntimeStatusInference(source) {
   if (source.includes(SUBAGENT_RUNTIME_STATUS_MARKER)) {
     return !hasInstalledSubagentRuntimeStatus(source);
   }
+  if (isUpstreamSafeSubagentRuntimeStatusAsset(source)) return false;
   return (
     findBuilderContracts(source, { installed: false }).length > 0 ||
     findProjectionContracts(source, { installed: false }).length > 0 ||
@@ -177,6 +220,7 @@ function applyLinuxSubagentRuntimeStatusPatch(source) {
     if (hasInstalledSubagentRuntimeStatus(source)) return source;
     throw new Error("Found partial subagent runtime status patch");
   }
+  if (isUpstreamSafeSubagentRuntimeStatusAsset(source)) return source;
 
   const builders = findBuilderContracts(source, { installed: false });
   const projections = findProjectionContracts(source, { installed: false });
@@ -258,4 +302,5 @@ module.exports = {
   classifySubagentRuntimeStatus,
   hasUnsafeSubagentRuntimeStatusInference,
   isSubagentRuntimeStatusAsset,
+  isUpstreamSafeSubagentRuntimeStatusAsset,
 };
