@@ -31,14 +31,16 @@ paginated rollout and SQLite projection before publishing it. Subagent rollouts
 are skipped; after a root is paginated, new v2 subagents inherit paginated
 history from it.
 
-The subagent patch treats only an explicit current `active` status as working;
-`notLoaded`, `idle`, and missing current status remain inactive while the
-independent open spawn edge is preserved for explicit resume. Topology recovery
-uses thread metadata only; a child thread's turns are loaded only when that
-thread is explicitly opened or otherwise addressed. An inactive owned thread
-is unsubscribed after 30 minutes, which removes its turns from renderer memory;
-the app-server's existing 30-minute idle-unload then removes the cold runtime.
-Active views, running turns, approvals, and pending user input remain loaded.
+The subagent status patch treats only an explicit current `active` status as
+working; `notLoaded`, `idle`, and missing current status remain inactive while
+the independent open spawn edge is preserved for explicit resume. The current
+official topology-recovery path already keeps only spawn metadata plus one
+content-free final turn; this feature verifies that contract fail-closed instead
+of rewriting it. A child thread's content is loaded only when that thread is
+explicitly opened or otherwise addressed. An inactive owned thread is
+unsubscribed after 30 minutes, which removes its turns from renderer memory; the
+app-server's existing 30-minute idle-unload then removes the cold runtime. Active
+views, running turns, approvals, and pending user input remain loaded.
 
 Enable it in `linux-features/features.json` only for a reproduced regression:
 

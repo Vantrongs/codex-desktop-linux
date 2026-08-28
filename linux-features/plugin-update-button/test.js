@@ -15,6 +15,7 @@ const {
   PATCH_MARKER,
   applyPluginUpdateButtonPatch,
   descriptors,
+  hasInstalledPluginUpdateButton,
   pluginUpdateRuntimeSource,
 } = require("./patch.js");
 
@@ -41,6 +42,21 @@ function currentPluginDetailFixture() {
     "Vt=async()=>{await uu({hostId:B,invalidateQueriesAndBroadcast:O,marketplacePath:U,pluginName:o,refetchPluginDetail:ft})},Ht=(0,fu.useEffectEvent)(Vt),",
     "xi=K!=null&&In===K.summary.id,Si=K!=null&&Nn===K.summary.id;let na=K!=null?(0,$.jsx)(ts,{blockedReason:null,isInstalled:K.summary.installed,isUninstalling:xi,isUpdatingEnabled:Si,shareActions:null,onInstall:()=>{}}):null;return na}",
     "function eu(){}",
+  ].join("");
+}
+
+function currentOfficialLinuxPluginDetailFixture() {
+  return [
+    "function wc(e){let{hostId:c}=e,D=Go(ko);return Ee(D,c).sendRequest(`skills/config/write`,{path:`skill`,enabled:!0})}",
+    "function Df(e){let{hostId:a,pluginName:o,marketplacePath:c,parentPage:g}=e===void 0?{}:e,b=Go(ko),",
+    "[F,I]=(0,Zf.useState)(null),G=a??route?.hostId??`local`,",
+    "{directMarketplacePath:Se}=Ua({explicitMarketplacePath:c}),Ge=Se??fallbackPath,",
+    "{plugin:K,refetch:Yt}=M({hostId:G,marketplacePath:Ge,pluginName:o}),",
+    "bn=async()=>{await Yf({hostId:G,marketplacePath:Ge,pluginName:o,refetchPluginDetail:Yt})},",
+    "xn=(0,Zf.useEffectEvent)(bn),",
+    "Ba=(0,Qf.jsx)(qc,{blockedReason:null,isInstalled:K.summary.installed,",
+    "isUninstalling:Xi,isUpdatingEnabled:Zi,pluginIcon:Hi==null?void 0:(0,Qf.jsx)(Fe,{icon:Hi.icon}),",
+    "shareActions:za,onInstall:()=>{}});return Ba}function next(){}",
   ].join("");
 }
 
@@ -85,6 +101,7 @@ function runtimeButton({
   configError = null,
   installError = null,
   refreshError = null,
+  requestClientMode = false,
 } = {}) {
   const busyChanges = [];
   const calls = [];
@@ -118,14 +135,14 @@ function runtimeButton({
   };
   const bridge = async (method, payload) => {
     calls.push({ method, payload });
-    if (method === "read-config-for-host") {
+    if (method === "read-config-for-host" || method === "config/read") {
       if (configError != null) throw configError;
       return { config: { marketplaces: marketplace == null ? {} : { example: marketplace } } };
     }
-    if (method === "upgrade-marketplaces") {
+    if (method === "upgrade-marketplaces" || method === "marketplace/upgrade") {
       return upgradeResponse;
     }
-    if (method === "install-plugin" && installError != null) {
+    if ((method === "install-plugin" || method === "plugin/install") && installError != null) {
       throw installError;
     }
     return {};
@@ -134,6 +151,7 @@ function runtimeButton({
     bridgeVar: "bridge",
     jsxVar: "JsxRuntime",
     reactVar: "ReactRuntime",
+    requestClientProp: requestClientMode,
   });
   const component = Function(
     "ReactRuntime",
@@ -152,6 +170,7 @@ function runtimeButton({
       marketplacePath: "/tmp/example-marketplace",
       pluginName: "skills",
       pluginSource,
+      requestClient: { sendRequest: bridge },
       onBusyChange(value) {
         busyChanges.push(value);
       },
@@ -229,6 +248,51 @@ test("patches the Electron 42 React-compiled plugin detail component", () => {
   assert.match(patched, /onBusyChange:setCodexLinuxGitPluginUpdateBusyV1,onUpdated:Ht/);
 });
 
+test("patches the current official Linux plugin detail action layout", () => {
+  const source = currentOfficialLinuxPluginDetailFixture();
+  const patched = applyPluginUpdateButtonPatch(source);
+
+  assert.notEqual(patched, source);
+  assert.equal(applyPluginUpdateButtonPatch(patched), patched);
+  assert.match(patched, new RegExp(PATCH_MARKER));
+  assert.match(
+    patched,
+    /pluginIcon:Hi==null\?void 0:\(0,Qf\.jsx\)\(Fe,\{icon:Hi\.icon\}\),shareActions:/u,
+  );
+  assert.match(patched, /marketplacePath:K\.marketplacePath\?\?Ge/u);
+  assert.match(patched, /onBusyChange:setCodexLinuxGitPluginUpdateBusyV1,onUpdated:xn/u);
+  assert.match(patched, /requestClient:Ee\(b,G\)/u);
+});
+
+test("composes the update button with an existing plugin share action", () => {
+  const source = currentPluginDetailFixture().replace("shareActions:null", "shareActions:Ga");
+  const patched = applyPluginUpdateButtonPatch(source);
+
+  assert.notEqual(patched, source);
+  assert.equal(applyPluginUpdateButtonPatch(patched), patched);
+  assert.match(
+    patched,
+    /shareActions:\(0,\$\.jsxs\)\(\$\.Fragment,\{children:\[\(0,\$\.jsx\)\(codexLinuxGitPluginUpdateButton,[^\]]+,Ga\]\}\)/u,
+  );
+});
+
+test(
+  "patches the current official Linux plugin detail without replacing its share action",
+  { skip: process.env.CODEX_PLUGIN_DETAIL_ASSET == null },
+  () => {
+    const source = fs.readFileSync(process.env.CODEX_PLUGIN_DETAIL_ASSET, "utf8");
+    const patched = applyPluginUpdateButtonPatch(source);
+
+    assert.notEqual(patched, source);
+    assert.equal(applyPluginUpdateButtonPatch(patched), patched);
+    assert.equal(hasInstalledPluginUpdateButton(patched), true);
+    assert.match(
+      patched,
+      /children:\[\(0,Qf\.jsx\)\(codexLinuxGitPluginUpdateButton,[\s\S]{0,1000}?,za\]\}\)/u,
+    );
+  },
+);
+
 test("patch fails closed when refetch belongs to a neighboring callback", () => {
   const source = currentPluginDetailFixture().replace(
     "Vt=async()=>{await uu({hostId:B,invalidateQueriesAndBroadcast:O,marketplacePath:U,pluginName:o,refetchPluginDetail:ft})},Ht=(0,fu.useEffectEvent)(Vt),",
@@ -296,6 +360,30 @@ test("local marketplace plus git-subdir plugin directly performs atomic reinstal
       method: "install-plugin",
       payload: {
         hostId: "local",
+        marketplacePath: "/tmp/example-marketplace",
+        pluginName: "skills",
+      },
+    },
+  ]);
+  assert.deepEqual(runtime.updates, [true]);
+  assert.deepEqual(runtime.busyChanges, [true, false]);
+});
+
+test("official app-server client performs the same local atomic reinstall", async () => {
+  const runtime = runtimeButton({ requestClientMode: true });
+  runtime.render();
+  await runtime.resolveDiscovery();
+  const button = runtime.render();
+  await button.props.onClick({ preventDefault() {}, stopPropagation() {} });
+
+  assert.deepEqual(runtime.calls, [
+    {
+      method: "config/read",
+      payload: { includeLayers: false, cwd: null },
+    },
+    {
+      method: "plugin/install",
+      payload: {
         marketplacePath: "/tmp/example-marketplace",
         pluginName: "skills",
       },

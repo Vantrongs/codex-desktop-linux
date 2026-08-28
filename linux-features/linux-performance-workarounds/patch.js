@@ -30,7 +30,6 @@ const {
   isSubagentRuntimeStatusAsset,
 } = require("../../scripts/patches/impl/webview/subagent-runtime-status.js");
 const {
-  SUBAGENT_TOPOLOGY_METADATA_MARKER,
   applyLinuxSubagentTopologyMetadataOnlyPatch,
   isSubagentTopologyMetadataAsset,
 } = require("../../scripts/patches/impl/webview/subagent-topology-metadata-only.js");
@@ -86,7 +85,7 @@ module.exports = [
     id: "linux-agent-activity-layout-stability",
     order: 20_130,
     ciPolicy: CI_POLICY_REQUIRED_UPSTREAM,
-    pattern: /^subagent-activity-chip-group-[^.]+\.js$/,
+    pattern: /^(?:subagent-activity-chip-group|conversation-blocks)-[^.]+\.js$/,
     assetMatch: isAgentActivityLayoutAsset,
     missingDescription: "agent activity disclosure webview bundle",
     skipDescription: "Linux agent activity disclosure layout stability patch",
@@ -97,7 +96,8 @@ module.exports = [
     id: "linux-thread-virtualizer-layout-stability",
     order: 20_140,
     ciPolicy: CI_POLICY_REQUIRED_UPSTREAM,
-    pattern: /^open-sources-side-panel-tab-[^.]+\.js$/,
+    pattern:
+      /^(?:conversation-source|open-sources-side-panel-tab|virtualized-turn-list)-[^.]+\.js$/,
     assetMatch: isThreadVirtualizerLayoutAsset,
     missingDescription: "thread virtualizer webview bundle",
     skipDescription: "Linux thread virtualizer layout stability patch",
@@ -134,7 +134,6 @@ module.exports = [
     assetMatch: isSubagentTopologyMetadataAsset,
     missingDescription: "subagent topology hydration webview bundle",
     skipDescription: "Linux subagent metadata-only topology patch",
-    requiredMarkers: [SUBAGENT_TOPOLOGY_METADATA_MARKER],
     apply: applyLinuxSubagentTopologyMetadataOnlyPatch,
   }),
   webviewAssetPatch({

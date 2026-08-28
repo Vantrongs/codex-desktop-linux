@@ -261,6 +261,60 @@ test("thread virtualizer layout descriptor selects one semantic asset", () => {
   }
 });
 
+test("thread virtualizer layout descriptor accepts the current conversation source asset", () => {
+  const extractedDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-thread-source-"));
+  try {
+    const assetsDir = path.join(extractedDir, "webview", "assets");
+    const assetPath = path.join(assetsDir, "conversation-source-current.js");
+    fs.mkdirSync(assetsDir, { recursive: true });
+    fs.writeFileSync(assetPath, fixture());
+    const report = createPatchReport();
+
+    applyWebviewAssetPatchDescriptors(
+      extractedDir,
+      normalizePatchDescriptors(layoutStabilityDescriptors),
+      {},
+      report,
+    );
+
+    assert.equal(report.patches[0]?.status, "applied");
+    assert.equal(report.patches[0]?.assetName, "conversation-source-current.js");
+    assert.match(
+      fs.readFileSync(assetPath, "utf8"),
+      new RegExp(THREAD_VIRTUALIZER_LAYOUT_MARKER, "u"),
+    );
+  } finally {
+    fs.rmSync(extractedDir, { force: true, recursive: true });
+  }
+});
+
+test("thread virtualizer layout descriptor accepts the current virtualized turn list asset", () => {
+  const extractedDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-thread-list-"));
+  try {
+    const assetsDir = path.join(extractedDir, "webview", "assets");
+    const assetPath = path.join(assetsDir, "virtualized-turn-list-current.js");
+    fs.mkdirSync(assetsDir, { recursive: true });
+    fs.writeFileSync(assetPath, fixture());
+    const report = createPatchReport();
+
+    applyWebviewAssetPatchDescriptors(
+      extractedDir,
+      normalizePatchDescriptors(layoutStabilityDescriptors),
+      {},
+      report,
+    );
+
+    assert.equal(report.patches[0]?.status, "applied");
+    assert.equal(report.patches[0]?.assetName, "virtualized-turn-list-current.js");
+    assert.match(
+      fs.readFileSync(assetPath, "utf8"),
+      new RegExp(THREAD_VIRTUALIZER_LAYOUT_MARKER, "u"),
+    );
+  } finally {
+    fs.rmSync(extractedDir, { force: true, recursive: true });
+  }
+});
+
 test("thread virtualizer layout patch rejects marker-only partial state", () => {
   assert.throws(
     () => applyLinuxThreadVirtualizerLayoutStabilityPatch(

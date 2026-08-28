@@ -25,7 +25,11 @@ const INSTALLED_RETENTION_PATTERN = new RegExp(
 
 const RETENTION_CLASS_END_PATTERN = new RegExp(
   `hasActiveConversationView\\((${IDENTIFIER})\\)\\{return this\\.params\\.` +
-    `threadStore\\.isConversationActive\\(\\1\\)\\}`,
+    `threadStore\\.isConversationActive\\(\\1\\)\\}` +
+    `(?:hasOwnedStreamFollowers\\((${IDENTIFIER})\\)\\{return this\\.params\\.` +
+    `streamState\\.getStreamRole\\(\\2\\)\\?\\.role===` +
+    "`owner`" +
+    `&&this\\.params\\.streamState\\.hasFollowersOrPendingFollowerReconnect\\(\\2\\)\\})?`,
   "u",
 );
 
@@ -35,24 +39,76 @@ function matchesRetentionContract(source, retentionIndex) {
   if (classEnd == null) return false;
   const retentionClass = remainder.slice(0, classEnd.index + classEnd[0].length);
   const id = IDENTIFIER;
-  const inactivityGuardPattern = new RegExp(
-    `(${id})==null\\|\\|\\1\\.resumeState!==` +
+  const legacyInactivityGuardPattern = new RegExp(
+    `(?:(${id})==null\\|\\|\\1\\.resumeState|(${id})\\?\\.resumeState)!==` +
       "`resumed`" +
       `\\|\\|this\\.params\\.streamState\\.getStreamRole\\((${id})\\)` +
       `\\?\\.role!==` +
       "`owner`" +
-      `\\|\\|this\\.hasActiveConversationView\\(\\2\\)` +
-      `\\|\\|this\\.params\\.streamState\\.hasFollowersOrPendingFollowerReconnect\\(\\2\\)` +
-      `(?:\\|\\|this\\.unsubscribingConversationIds\\.has\\(\\2\\))?` +
-      `\\|\\|this\\.shouldKeepConversationLoaded\\(\\1\\)\\)continue`,
+      `\\|\\|this\\.hasActiveConversationView\\(\\3\\)` +
+      `\\|\\|this\\.params\\.streamState\\.hasFollowersOrPendingFollowerReconnect\\(\\3\\)` +
+      `(?:\\|\\|this\\.unsubscribingConversationIds\\.has\\(\\3\\))?` +
+      `\\|\\|this\\.shouldKeepConversationLoaded\\((${id})\\)\\)continue`,
     "gu",
   );
-  const safeClearPattern = new RegExp(
-    `${id}=!${id}&&!this\\.hasActiveConversationView\\(${id}\\)&&` +
-      `!this\\.params\\.streamState\\.hasFollowersOrPendingFollowerReconnect\\(${id}\\)&&` +
-      `!this\\.shouldKeepConversationLoaded\\(${id}\\)`,
+  const currentInactivityGuardPattern = new RegExp(
+    `(?:(${id})==null\\|\\|\\1\\.resumeState|(${id})\\?\\.resumeState)!==` +
+      "`resumed`" +
+      `\\|\\|!this\\.params\\.streamState\\.ownsConversationHistoryStream\\((${id})\\)` +
+      `\\|\\|this\\.hasActiveConversationView\\(\\3\\)` +
+      `\\|\\|this\\.hasOwnedStreamFollowers\\(\\3\\)` +
+      `(?:\\|\\|this\\.unsubscribingConversationIds\\.has\\(\\3\\))?` +
+      `\\|\\|this\\.shouldKeepConversationLoaded\\((${id})\\)\\)continue`,
+    "gu",
+  );
+  const legacySafeClearTransactionPattern = new RegExp(
+    `await this\\.params\\.requestClient\\.sendRequest\\(` +
+      "`thread/unsubscribe`,\\{threadId:" +
+      `(${id})\\}(?:(?!` +
+      "`thread/unsubscribe`" +
+      `)[\\s\\S]){0,200}?` +
+      `(?<![\\w$])(${id})=this\\.params\\.threadStore\\.getConversation\\(\\1\\);` +
+      `(?:(?!this\\.params\\.threadStore\\.updateConversationState)[\\s\\S]){0,1000}?` +
+      `(${id})=!(${id})&&!this\\.hasActiveConversationView\\(\\1\\)&&` +
+      `!this\\.params\\.streamState\\.hasFollowersOrPendingFollowerReconnect\\(\\1\\)&&` +
+      `!this\\.shouldKeepConversationLoaded\\(\\2\\);` +
+      `this\\.params\\.threadStore\\.updateConversationState\\(\\1,(${id})=>\\{` +
+      `\\3&&\\((${id})\\(\\5,\\[\\],!1\\),\\5\\.turnsPagination=\\{olderCursor:null`,
     "u",
   );
+  const currentSafeClearTransactionPattern = new RegExp(
+    `await this\\.params\\.requestClient\\.sendRequest\\(` +
+      "`thread/unsubscribe`,\\{threadId:" +
+      `(${id})\\}(?:(?!` +
+      "`thread/unsubscribe`" +
+      `)[\\s\\S]){0,200}?` +
+      `(?<![\\w$])(${id})=this\\.params\\.threadStore\\.getConversation\\(\\1\\);` +
+      `(?:(?!this\\.params\\.threadStore\\.updateConversationState)[\\s\\S]){0,1000}?` +
+      `(${id})=!(${id})&&!this\\.hasActiveConversationView\\(\\1\\)&&` +
+      `!this\\.hasOwnedStreamFollowers\\(\\1\\)&&` +
+      `!this\\.shouldKeepConversationLoaded\\(\\2\\);` +
+      `this\\.params\\.threadStore\\.updateConversationState\\(\\1,(${id})=>\\{` +
+      `\\3&&\\((${id})\\(\\5,\\[\\],!1\\),\\5\\.turnsPagination=\\{olderCursor:null`,
+    "u",
+  );
+  const hasSafeClearConversationContract = (safeClearTransaction) =>
+    safeClearTransaction != null;
+  const legacyGuards = [...retentionClass.matchAll(legacyInactivityGuardPattern)]
+    .filter((match) => (match[1] ?? match[2]) === match[4]);
+  const currentGuards = [...retentionClass.matchAll(currentInactivityGuardPattern)]
+    .filter((match) => (match[1] ?? match[2]) === match[4]);
+  const hasLegacyStreamContract =
+    legacyGuards.length === 2 &&
+    hasSafeClearConversationContract(
+      legacySafeClearTransactionPattern.exec(retentionClass),
+    );
+  const hasCurrentStreamContract =
+    currentGuards.length === 2 &&
+    hasSafeClearConversationContract(
+      currentSafeClearTransactionPattern.exec(retentionClass),
+    ) &&
+    retentionClass.includes("ownsConversationHistoryStream") &&
+    retentionClass.includes("hasOwnedStreamFollowers");
 
   return (
     retentionClass.includes("inactive_thread_unsubscribe_started") &&
@@ -62,15 +118,10 @@ function matchesRetentionContract(source, retentionIndex) {
     retentionClass.includes("turnsPagination={olderCursor:null") &&
     retentionClass.includes("threadRuntimeStatus?.type===`active`") &&
     retentionClass.includes("?.status===`inProgress`") &&
-    retentionClass.includes("hasFollowersOrPendingFollowerReconnect") &&
     retentionClass.includes("this.shouldKeepConversationLoaded(") &&
     retentionClass.includes("waitingOnApproval") &&
     retentionClass.includes("waitingOnUserInput") &&
-    [...retentionClass.matchAll(inactivityGuardPattern)].length === 2 &&
-    safeClearPattern.test(retentionClass) &&
-    new RegExp(`${IDENTIFIER}\\(${IDENTIFIER},\\[\\],!1\\)`, "u").test(
-      retentionClass,
-    )
+    (hasLegacyStreamContract || hasCurrentStreamContract)
   );
 }
 

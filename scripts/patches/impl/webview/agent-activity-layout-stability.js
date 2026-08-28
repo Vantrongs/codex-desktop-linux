@@ -6,20 +6,20 @@ const AGENT_ACTIVITY_LAYOUT_MARKER =
   "codexLinuxAgentActivityDiscreteDisclosure";
 
 const INITIAL_STATE_PATTERN =
-  /([A-Za-z_$][\w$]*)=\(\)=>([A-Za-z_$][\w$]*)\?([A-Za-z_$][\w$]*)\?`expanded`:([A-Za-z_$][\w$]*)\?`closing`:`collapsed`:`collapsed`/u;
+  /([A-Za-z_$][\w$]*)=\(\)=>([A-Za-z_$][\w$]*)\?([A-Za-z_$][\w$]*)\?`expanded`:([A-Za-z_$][\w$]*)(?:&&typeof ([A-Za-z_$][\w$]*)!=`function`)?\?`closing`:`collapsed`:`collapsed`/u;
 const DISCLOSURE_STATE_PATTERN =
   /let\[([A-Za-z_$][\w$]*),([A-Za-z_$][\w$]*)\]=\(0,[A-Za-z_$][\w$]*\.useState\)\(([A-Za-z_$][\w$]*)\),([A-Za-z_$][\w$]*)=\1===`opening`\|\|\1===`expanded`,([A-Za-z_$][\w$]*)=\1===`expanded`/u;
 const TOGGLE_HANDLER_PATTERN =
   /([A-Za-z_$][\w$]*)=\(\)=>\{if\(([A-Za-z_$][\w$]*)\)\{([A-Za-z_$][\w$]*)\(`closing`\);return\}if\(([A-Za-z_$][\w$]*)\?\.\(\),([A-Za-z_$][\w$]*)===`closing`\)\{\3\(`expanded`\);return\}\3\(`opening`\),requestAnimationFrame\(\(\)=>\{\3\(([A-Za-z_$][\w$]*)\)\}\)\}/u;
 const MOTION_BODY_PATTERN =
-  /([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)&&([A-Za-z_$][\w$]*)!==`collapsed`\?\(0,([A-Za-z_$][\w$]*)\.jsx\)\(([A-Za-z_$][\w$]*)\.div,\{initial:!1,animate:([A-Za-z_$][\w$]*)\?\{opacity:1,height:`auto`\}:\{opacity:0,height:0\},transition:[A-Za-z_$][\w$]*,style:\{overflow:`hidden`,pointerEvents:([A-Za-z_$][\w$]*)\?`auto`:`none`\},onAnimationComplete:\(\)=>\{([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\)\},children:([A-Za-z_$][\w$]*)\}\):null/u;
+  /([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)&&([A-Za-z_$][\w$]*)!==`collapsed`\?\(0,([A-Za-z_$][\w$]*)\.jsx\)\(([A-Za-z_$][\w$]*)\.div,\{(?:className:(?:`[^`]*`|[^,{}]+),)?initial:!1,animate:([A-Za-z_$][\w$]*)\?\{opacity:1,height:`auto`\}:\{opacity:0,height:0\},transition:[A-Za-z_$][\w$]*,style:\{overflow:`hidden`,pointerEvents:([A-Za-z_$][\w$]*)\?`auto`:`none`\},onAnimationComplete:\(\)=>\{([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\)\},children:(?:typeof ([A-Za-z_$][\w$]*)==`function`\?\10\(\):\10|([A-Za-z_$][\w$]*))\}\):null/u;
 
 const INSTALLED_INITIAL_STATE_PATTERN =
   /=\(\)=>[A-Za-z_$][\w$]*&&[A-Za-z_$][\w$]*\?`expanded`:`collapsed`/gu;
 const INSTALLED_TOGGLE_PATTERN =
   /=\(\)=>\{if\([A-Za-z_$][\w$]*\)\{[A-Za-z_$][\w$]*\(`collapsed`\);return\}[A-Za-z_$][\w$]*\?\.\(\),[A-Za-z_$][\w$]*\(`expanded`\)\}/gu;
 const INSTALLED_BODY_PATTERN =
-  /=[A-Za-z_$][\w$]*&&[A-Za-z_$][\w$]*\?\(0,[A-Za-z_$][\w$]*\.jsx\)\(`div`,\{style:\{overflow:`hidden`\},children:[A-Za-z_$][\w$]*\}\):null/gu;
+  /=[A-Za-z_$][\w$]*&&[A-Za-z_$][\w$]*\?\(0,[A-Za-z_$][\w$]*\.jsx\)\(`div`,\{(?:className:(?:`[^`]*`|[^,{}]+),)?style:\{overflow:`hidden`\},children:(?:typeof ([A-Za-z_$][\w$]*)==`function`\?\1\(\):\1|([A-Za-z_$][\w$]*))\}\):null/gu;
 
 function hasInstalledAgentActivityLayout(source) {
   return source.split(AGENT_ACTIVITY_LAYOUT_MARKER).length - 1 === 1 &&
@@ -92,6 +92,7 @@ function hasCoherentDisclosureContract(componentText, parameter) {
     canExpandDefaults.some((candidate) => componentText.includes(candidate)) &&
     expandedDefaults.some((candidate) => componentText.includes(candidate)) &&
     initial[4] === aliases.shouldAnimateInitialCollapse &&
+    (initial[5] == null || initial[5] === aliases.children) &&
     state[3] === initial[1] &&
     toggle[2] === state[4] &&
     toggle[3] === state[2] &&
@@ -102,7 +103,7 @@ function hasCoherentDisclosureContract(componentText, parameter) {
     body[6] === state[5] &&
     body[7] === state[5] &&
     body[8] === state[2] &&
-    body[10] === aliases.children
+    (body[10] ?? body[11]) === aliases.children
   );
 }
 
@@ -194,14 +195,21 @@ function applyLinuxAgentActivityLayoutStabilityPatch(source) {
       pointerEventsExpanded,
       _setter,
       _completion,
-      children,
+      lazyChildren,
+      directChildren,
     ) => {
       if (expanded !== pointerEventsExpanded) {
         throw new Error(
           "Agent activity disclosure animation and pointer-event states diverged",
         );
       }
-      return `${body}=${canExpand}&&${expanded}?(0,${jsxRuntime}.jsx)(\`div\`,{style:{overflow:\`hidden\`},children:${children}}):null`;
+      const children = lazyChildren ?? directChildren;
+      const renderedChildren = lazyChildren == null
+        ? children
+        : `typeof ${children}==\`function\`?${children}():${children}`;
+      const classNameProperty =
+        /\.div,\{(className:(?:`[^`]*`|[^,{}]+),)?initial:/u.exec(_match)?.[1] ?? "";
+      return `${body}=${canExpand}&&${expanded}?(0,${jsxRuntime}.jsx)(\`div\`,{${classNameProperty}style:{overflow:\`hidden\`},children:${renderedChildren}}):null`;
     },
     "agent activity disclosure motion body",
   );
