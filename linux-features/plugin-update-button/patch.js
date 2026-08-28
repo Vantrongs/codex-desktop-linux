@@ -101,7 +101,8 @@ function hasInstalledPluginUpdateButton(source) {
   });
   const parentActionPattern = new RegExp(
     `isUninstalling:(${JS_IDENT})\\|\\|${PARENT_BUSY_STATE},` +
-      `isUpdatingEnabled:(${JS_IDENT}),[^{}]{0,500}?shareActions:` +
+      `isUpdatingEnabled:(${JS_IDENT}),` +
+      `(?:(?!shareActions:)[\\s\\S]){0,500}?shareActions:` +
       `[\\s\\S]{0,180}?\\(0,(${JS_IDENT})\\.jsx\\)\\(${COMPONENT_NAME},\\{` +
       `hostId:(${JS_IDENT}),installed:(${JS_IDENT})\\.summary\\.installed,` +
       `isBusy:\\1\\|\\|\\2\\|\\|${PARENT_BUSY_STATE},` +
@@ -201,7 +202,7 @@ function findReactCompiledPluginDetailBinding(source) {
   const functionPattern = new RegExp(`function (${JS_IDENT})\\((${JS_IDENT})\\)\\{`, "g");
   const actionPattern = new RegExp(
     `isUninstalling:(${JS_IDENT}),isUpdatingEnabled:(${JS_IDENT}),` +
-      `([^{}]{0,500}?)shareActions:(null|${JS_IDENT})`,
+      `((?:(?!shareActions:)[\\s\\S]){0,500})shareActions:(null|${JS_IDENT})`,
   );
   const candidates = [];
   let functionMatch;
@@ -248,12 +249,27 @@ function findReactCompiledPluginDetailBinding(source) {
         "`skills/config/write`,",
     ),
   );
-  const requestScopeMatch = block.match(
-    new RegExp(
-      `,(${JS_IDENT})=${JS_IDENT}\\(${JS_IDENT}\\),${JS_IDENT}=${JS_IDENT}\\(\\),` +
-        `${JS_IDENT}=${JS_IDENT}\\(\\),\\{accountId:`,
-    ),
-  );
+  let requestScopeMatch = null;
+  if (requestFactoryMatch != null) {
+    const sourceScopeVar = requestFactoryMatch[2];
+    const beforeRequest = source.slice(0, requestFactoryMatch.index);
+    const sourceScopeAssignments = [
+      ...beforeRequest.matchAll(
+        new RegExp(
+          `(?:let |,)${escapeRegExp(sourceScopeVar)}=(${JS_IDENT}(?:\\(${JS_IDENT}\\))?)`,
+          "g",
+        ),
+      ),
+    ];
+    const sourceScopeInitializer = sourceScopeAssignments.at(-1)?.[1];
+    if (sourceScopeInitializer != null) {
+      requestScopeMatch = block.match(
+        new RegExp(
+          `(?:let |,)(${JS_IDENT})=${escapeRegExp(sourceScopeInitializer)}(?:,|;)`,
+        ),
+      );
+    }
+  }
   const hasLegacyBridge = bridgeMatch != null;
   const hasCurrentRequestClient = requestFactoryMatch != null && requestScopeMatch != null;
   if (

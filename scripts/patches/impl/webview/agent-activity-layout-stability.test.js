@@ -53,6 +53,13 @@ function lazyChildrenFixture() {
     .replace("children:u}):null", "children:typeof u==`function`?u():u}):null");
 }
 
+function currentFixture() {
+  return lazyChildrenFixture().replace(
+    "nf.div,{initial:!1,",
+    "nf.div,{className:`-ms-2 ps-2`,initial:!1,",
+  );
+}
+
 test("agent activity disclosure uses a discrete transition without layout measurement", () => {
   const source = fixture();
   assert.equal(isAgentActivityLayoutAsset(source), true);
@@ -90,6 +97,18 @@ test("agent activity disclosure preserves lazy body evaluation", () => {
   assert.match(
     patched,
     /w=f&&v\?\(0,D4\.jsx\)\(`div`,\{style:\{overflow:`hidden`\},children:typeof u==`function`\?u\(\):u\}\):null/u,
+  );
+});
+
+test("agent activity disclosure preserves the current body class name", () => {
+  const source = currentFixture();
+  assert.equal(isAgentActivityLayoutAsset(source), true);
+
+  const patched = applyLinuxAgentActivityLayoutStabilityPatch(source);
+  assert.equal(hasUnsafeAgentActivityLayout(patched), false);
+  assert.match(
+    patched,
+    /w=f&&v\?\(0,D4\.jsx\)\(`div`,\{className:`-ms-2 ps-2`,style:\{overflow:`hidden`\},children:typeof u==`function`\?u\(\):u\}\):null/u,
   );
 });
 
@@ -141,6 +160,33 @@ test("agent activity layout descriptor selects one semantic asset and verifies i
     assert.equal(
       fs.readFileSync(path.join(assetsDir, "app-main-decoy.js"), "utf8"),
       uncorrelatedFixture(),
+    );
+  } finally {
+    fs.rmSync(extractedDir, { force: true, recursive: true });
+  }
+});
+
+test("agent activity layout descriptor accepts the current conversation blocks asset", () => {
+  const extractedDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-agent-blocks-"));
+  try {
+    const assetsDir = path.join(extractedDir, "webview", "assets");
+    const assetPath = path.join(assetsDir, "conversation-blocks-current.js");
+    fs.mkdirSync(assetsDir, { recursive: true });
+    fs.writeFileSync(assetPath, currentFixture());
+    const report = createPatchReport();
+
+    applyWebviewAssetPatchDescriptors(
+      extractedDir,
+      normalizePatchDescriptors(layoutStabilityDescriptors),
+      {},
+      report,
+    );
+
+    assert.equal(report.patches[0]?.status, "applied");
+    assert.equal(report.patches[0]?.assetName, "conversation-blocks-current.js");
+    assert.match(
+      fs.readFileSync(assetPath, "utf8"),
+      new RegExp(AGENT_ACTIVITY_LAYOUT_MARKER, "u"),
     );
   } finally {
     fs.rmSync(extractedDir, { force: true, recursive: true });

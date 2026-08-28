@@ -15,6 +15,7 @@ const {
   PATCH_MARKER,
   applyPluginUpdateButtonPatch,
   descriptors,
+  hasInstalledPluginUpdateButton,
   pluginUpdateRuntimeSource,
 } = require("./patch.js");
 
@@ -44,17 +45,18 @@ function currentPluginDetailFixture() {
   ].join("");
 }
 
-function officialLinuxPluginDetailFixture() {
+function currentOfficialLinuxPluginDetailFixture() {
   return [
-    "function wc(e){let{hostId:c}=e,D=scope;return Ee(D,c).sendRequest(`skills/config/write`,{path:`skill`,enabled:!0})}",
-    "function Vu(e){let t=(0,ld.c)(396),{allowUniqueNameFallback:n,hostId:r,pluginName:a,marketplacePath:o,parentPage:m}=e===void 0?{}:e,",
-    "_=vt(ue),y=mn(),b=Xt(),{accountId:x,userId:S}=He(),[ee,A]=(0,ud.useState)(null),U=r??route?.hostId??`local`,",
-    "{directMarketplacePath:Ee}=Ft({explicitMarketplacePath:o}),W=Ee??fallback?.marketplacePath??null,",
-    "{plugin:K,refetch:qt}=gi({hostId:U,marketplacePath:W,pluginName:a}),",
-    "jn=async()=>{await cd({hostId:U,marketplacePath:W,plugin:K,pluginName:a,refetchPluginDetail:qt})},Mn=(0,ud.useEffectEvent)(jn),",
-    "oa=Cr===K?.summary.id,sa=gr===K?.summary.id,Qi=icon;let Va=K!=null?(0,$.jsx)(Fs,{blockedReason:null,isInstalled:K.summary.installed,",
-    "isUninstalling:oa,isUpdatingEnabled:sa,pluginIcon:Qi==null?void 0:bi(Qi.icon),shareActions:null,onInstall:()=>{}}):null;return Va}",
-    "function next(){}",
+    "function wc(e){let{hostId:c}=e,D=Go(ko);return Ee(D,c).sendRequest(`skills/config/write`,{path:`skill`,enabled:!0})}",
+    "function Df(e){let{hostId:a,pluginName:o,marketplacePath:c,parentPage:g}=e===void 0?{}:e,b=Go(ko),",
+    "[F,I]=(0,Zf.useState)(null),G=a??route?.hostId??`local`,",
+    "{directMarketplacePath:Se}=Ua({explicitMarketplacePath:c}),Ge=Se??fallbackPath,",
+    "{plugin:K,refetch:Yt}=M({hostId:G,marketplacePath:Ge,pluginName:o}),",
+    "bn=async()=>{await Yf({hostId:G,marketplacePath:Ge,pluginName:o,refetchPluginDetail:Yt})},",
+    "xn=(0,Zf.useEffectEvent)(bn),",
+    "Ba=(0,Qf.jsx)(qc,{blockedReason:null,isInstalled:K.summary.installed,",
+    "isUninstalling:Xi,isUpdatingEnabled:Zi,pluginIcon:Hi==null?void 0:(0,Qf.jsx)(Fe,{icon:Hi.icon}),",
+    "shareActions:za,onInstall:()=>{}});return Ba}function next(){}",
   ].join("");
 }
 
@@ -246,8 +248,8 @@ test("patches the Electron 42 React-compiled plugin detail component", () => {
   assert.match(patched, /onBusyChange:setCodexLinuxGitPluginUpdateBusyV1,onUpdated:Ht/);
 });
 
-test("patches the official Linux app-server plugin detail component", () => {
-  const source = officialLinuxPluginDetailFixture();
+test("patches the current official Linux plugin detail action layout", () => {
+  const source = currentOfficialLinuxPluginDetailFixture();
   const patched = applyPluginUpdateButtonPatch(source);
 
   assert.notEqual(patched, source);
@@ -255,11 +257,11 @@ test("patches the official Linux app-server plugin detail component", () => {
   assert.match(patched, new RegExp(PATCH_MARKER));
   assert.match(
     patched,
-    /isUpdatingEnabled:sa,pluginIcon:Qi==null\?void 0:bi\(Qi\.icon\),shareActions:/,
+    /pluginIcon:Hi==null\?void 0:\(0,Qf\.jsx\)\(Fe,\{icon:Hi\.icon\}\),shareActions:/u,
   );
-  assert.match(patched, /requestClient:Ee\(_,U\)/);
-  assert.match(patched, /v\.sendRequest\(`config\/read`,\{includeLayers:!1,cwd:null\}\)/);
-  assert.match(patched, /v\.sendRequest\(`plugin\/install`,\{marketplacePath:a,pluginName:o\}\)/);
+  assert.match(patched, /marketplacePath:K\.marketplacePath\?\?Ge/u);
+  assert.match(patched, /onBusyChange:setCodexLinuxGitPluginUpdateBusyV1,onUpdated:xn/u);
+  assert.match(patched, /requestClient:Ee\(b,G\)/u);
 });
 
 test("composes the update button with an existing plugin share action", () => {
@@ -283,7 +285,11 @@ test(
 
     assert.notEqual(patched, source);
     assert.equal(applyPluginUpdateButtonPatch(patched), patched);
-    assert.match(patched, /children:\[\(0,\$\.jsx\)\(codexLinuxGitPluginUpdateButton,[^\]]+,Ga\]\}/u);
+    assert.equal(hasInstalledPluginUpdateButton(patched), true);
+    assert.match(
+      patched,
+      /children:\[\(0,Qf\.jsx\)\(codexLinuxGitPluginUpdateButton,[\s\S]{0,1000}?,za\]\}\)/u,
+    );
   },
 );
 

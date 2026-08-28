@@ -12,14 +12,14 @@ const DISCLOSURE_STATE_PATTERN =
 const TOGGLE_HANDLER_PATTERN =
   /([A-Za-z_$][\w$]*)=\(\)=>\{if\(([A-Za-z_$][\w$]*)\)\{([A-Za-z_$][\w$]*)\(`closing`\);return\}if\(([A-Za-z_$][\w$]*)\?\.\(\),([A-Za-z_$][\w$]*)===`closing`\)\{\3\(`expanded`\);return\}\3\(`opening`\),requestAnimationFrame\(\(\)=>\{\3\(([A-Za-z_$][\w$]*)\)\}\)\}/u;
 const MOTION_BODY_PATTERN =
-  /([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)&&([A-Za-z_$][\w$]*)!==`collapsed`\?\(0,([A-Za-z_$][\w$]*)\.jsx\)\(([A-Za-z_$][\w$]*)\.div,\{initial:!1,animate:([A-Za-z_$][\w$]*)\?\{opacity:1,height:`auto`\}:\{opacity:0,height:0\},transition:[A-Za-z_$][\w$]*,style:\{overflow:`hidden`,pointerEvents:([A-Za-z_$][\w$]*)\?`auto`:`none`\},onAnimationComplete:\(\)=>\{([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\)\},children:(?:typeof ([A-Za-z_$][\w$]*)==`function`\?\10\(\):\10|([A-Za-z_$][\w$]*))\}\):null/u;
+  /([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)&&([A-Za-z_$][\w$]*)!==`collapsed`\?\(0,([A-Za-z_$][\w$]*)\.jsx\)\(([A-Za-z_$][\w$]*)\.div,\{(?:className:(?:`[^`]*`|[^,{}]+),)?initial:!1,animate:([A-Za-z_$][\w$]*)\?\{opacity:1,height:`auto`\}:\{opacity:0,height:0\},transition:[A-Za-z_$][\w$]*,style:\{overflow:`hidden`,pointerEvents:([A-Za-z_$][\w$]*)\?`auto`:`none`\},onAnimationComplete:\(\)=>\{([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\)\},children:(?:typeof ([A-Za-z_$][\w$]*)==`function`\?\10\(\):\10|([A-Za-z_$][\w$]*))\}\):null/u;
 
 const INSTALLED_INITIAL_STATE_PATTERN =
   /=\(\)=>[A-Za-z_$][\w$]*&&[A-Za-z_$][\w$]*\?`expanded`:`collapsed`/gu;
 const INSTALLED_TOGGLE_PATTERN =
   /=\(\)=>\{if\([A-Za-z_$][\w$]*\)\{[A-Za-z_$][\w$]*\(`collapsed`\);return\}[A-Za-z_$][\w$]*\?\.\(\),[A-Za-z_$][\w$]*\(`expanded`\)\}/gu;
 const INSTALLED_BODY_PATTERN =
-  /=[A-Za-z_$][\w$]*&&[A-Za-z_$][\w$]*\?\(0,[A-Za-z_$][\w$]*\.jsx\)\(`div`,\{style:\{overflow:`hidden`\},children:(?:typeof ([A-Za-z_$][\w$]*)==`function`\?\1\(\):\1|([A-Za-z_$][\w$]*))\}\):null/gu;
+  /=[A-Za-z_$][\w$]*&&[A-Za-z_$][\w$]*\?\(0,[A-Za-z_$][\w$]*\.jsx\)\(`div`,\{(?:className:(?:`[^`]*`|[^,{}]+),)?style:\{overflow:`hidden`\},children:(?:typeof ([A-Za-z_$][\w$]*)==`function`\?\1\(\):\1|([A-Za-z_$][\w$]*))\}\):null/gu;
 
 function hasInstalledAgentActivityLayout(source) {
   return source.split(AGENT_ACTIVITY_LAYOUT_MARKER).length - 1 === 1 &&
@@ -207,7 +207,9 @@ function applyLinuxAgentActivityLayoutStabilityPatch(source) {
       const renderedChildren = lazyChildren == null
         ? children
         : `typeof ${children}==\`function\`?${children}():${children}`;
-      return `${body}=${canExpand}&&${expanded}?(0,${jsxRuntime}.jsx)(\`div\`,{style:{overflow:\`hidden\`},children:${renderedChildren}}):null`;
+      const classNameProperty =
+        /\.div,\{(className:(?:`[^`]*`|[^,{}]+),)?initial:/u.exec(_match)?.[1] ?? "";
+      return `${body}=${canExpand}&&${expanded}?(0,${jsxRuntime}.jsx)(\`div\`,{${classNameProperty}style:{overflow:\`hidden\`},children:${renderedChildren}}):null`;
     },
     "agent activity disclosure motion body",
   );
