@@ -151,7 +151,7 @@ module.exports = [
     id: "linux-subagent-runtime-status-reconciliation",
     order: 20_160,
     ciPolicy: CI_POLICY_REQUIRED_UPSTREAM,
-    pattern: /^app-initial-[^.]+\.js$/,
+    pattern: /^(?:app-initial|app-primary)-[^.]+\.js$/,
     assetMatch: isSubagentRuntimeStatusAsset,
     missingDescription: "subagent runtime status projection webview bundle",
     skipDescription: "Linux subagent runtime status reconciliation patch",

@@ -15,6 +15,10 @@ const {
   loadLinuxFeaturePatchDescriptors,
 } = require("../../scripts/lib/linux-features.js");
 const {
+  createPatchReport,
+  enabledFeatureFailuresFromReport,
+} = require("../../scripts/lib/patch-report.js");
+const {
   COMPOSER_FILTER_NAME,
   COMPOSER_PATCH_MARKER,
   COMPOSER_REGISTRATION_PATCH_MARKER,
@@ -224,6 +228,8 @@ test("descriptors target the Skill card and main composer chunks", () => {
     true,
   );
   assert.equal(descriptors[1].pattern.test("app-initial-BHB6SClA.js"), true);
+  assert.equal(descriptors[1].pattern.test("app-primary-BHB6SClA.js"), true);
+  assert.equal(descriptors[2].pattern.test("app-primary-BHB6SClA.js"), true);
   assert.equal(descriptors[1].pattern.test("app-initial-Czet5G9g.css"), false);
   assert.equal(descriptors[1].pattern.test("plugin-detail-page-DmxssFl8.js"), false);
 });
@@ -603,5 +609,44 @@ test("enabled descriptor patches both current split composer chunks", () => {
     assert.match(patchedUi, new RegExp(COMPOSER_REGISTRATION_PATCH_MARKER));
     assert.match(patchedUi, new RegExp(COMPOSER_PATCH_MARKER));
     assert.match(patchedTrigger, new RegExp(COMPOSER_TRIGGER_PATCH_MARKER));
+  });
+});
+
+test("current app-primary trigger descriptor reports already-applied on replay", () => {
+  withTempDir((extractedDir) => {
+    const assetsDir = path.join(extractedDir, "webview", "assets");
+    const triggerPath = path.join(assetsDir, "app-primary-current.js");
+    fs.mkdirSync(assetsDir, { recursive: true });
+    fs.writeFileSync(triggerPath, currentComposerTriggerFixture());
+    const triggerDescriptors = normalizePatchDescriptors([
+      {
+        ...descriptors[2],
+        featureId: "skill-invocation-policy",
+        sourceKind: "feature",
+      },
+    ]);
+    const firstReport = createPatchReport();
+    const secondReport = createPatchReport();
+    firstReport.enabledFeatures = ["skill-invocation-policy"];
+    secondReport.enabledFeatures = ["skill-invocation-policy"];
+
+    applyWebviewAssetPatchDescriptors(
+      extractedDir,
+      triggerDescriptors,
+      {},
+      firstReport,
+    );
+    const once = fs.readFileSync(triggerPath, "utf8");
+    applyWebviewAssetPatchDescriptors(
+      extractedDir,
+      triggerDescriptors,
+      {},
+      secondReport,
+    );
+
+    assert.equal(firstReport.patches[0]?.status, "applied");
+    assert.equal(secondReport.patches[0]?.status, "already-applied");
+    assert.deepEqual(enabledFeatureFailuresFromReport(secondReport), []);
+    assert.equal(fs.readFileSync(triggerPath, "utf8"), once);
   });
 });

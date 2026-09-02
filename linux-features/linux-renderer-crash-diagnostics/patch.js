@@ -14,6 +14,7 @@ const {
 } = require("../../scripts/patches/impl/main-process/minidump-retention.js");
 const {
   applyLinuxRendererCrashBreadcrumbsPatch,
+  matchesLinuxRendererCrashBreadcrumbsContract,
 } = require("../../scripts/patches/impl/webview/renderer-crash-breadcrumbs.js");
 
 module.exports = [
@@ -34,7 +35,8 @@ module.exports = [
     id: "linux-renderer-crash-breadcrumbs",
     order: 30_110,
     ciPolicy: CI_POLICY_REQUIRED_UPSTREAM,
-    pattern: /^app-main-[^.]+\.js$/,
+    pattern: /^(?:app-initial|app-main)-[^.]+\.js$/,
+    assetMatch: matchesLinuxRendererCrashBreadcrumbsContract,
     missingDescription: "desktop global-error webview bundle",
     skipDescription: "Linux renderer crash breadcrumb patch",
     requiredMarkers: [

@@ -238,6 +238,8 @@ function findReactCompiledPluginDetailBinding(source) {
   const reactMatch = block.match(new RegExp(`\\(0,(${JS_IDENT})\\.useState\\)\\(`));
   const jsxMatch = block.match(
     new RegExp(`\\(0,(${JS_IDENT})\\.jsx\\)\\((${JS_IDENT}),\\{blockedReason:`),
+  ) ?? actionMatch[3].match(
+    new RegExp(`\\(0,(${JS_IDENT})\\.jsx\\)\\((${JS_IDENT}),`),
   );
   const bridgeMatch = source.match(
     new RegExp("await (" + JS_IDENT + ")\\(`read-plugin`,"),
@@ -310,10 +312,7 @@ function findReactCompiledPluginDetailBinding(source) {
       continue;
     }
     const refreshBlock = block.slice(refreshAsyncMatch.index, closeIndex + 1);
-    if (
-      refreshBlock.includes(`hostId:${hostIdVar},`) &&
-      refreshBlock.includes(refetchAnchor)
-    ) {
+    if (refreshBlock.includes(refetchAnchor)) {
       const refreshEventMatch = block.match(
         new RegExp(
           `(${JS_IDENT})=\\(0,${escapeRegExp(reactMatch[1])}\\.useEffectEvent\\)` +

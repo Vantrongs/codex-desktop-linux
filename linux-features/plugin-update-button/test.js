@@ -60,6 +60,19 @@ function currentOfficialLinuxPluginDetailFixture() {
   ].join("");
 }
 
+function currentOfficialLinux2631PluginDetailFixture() {
+  return [
+    "function wc(e){let{hostId:u}=e,k=St(lt);return I(k,u).sendRequest(`skills/config/write`,{path:`skill`,enabled:!0})}",
+    "function jf(e){let t=(0,ep.c)(332),{hostId:a,pluginName:o,marketplacePath:s,parentPage:m}=e===void 0?{}:e,y=St(lt),[L,R]=(0,tp.useState)(null),",
+    "W=a??route?.hostId??`local`,{directMarketplacePath:Ae}=te({explicitMarketplacePath:s}),",
+    "tt=Ae??fallbackPath,{plugin:K,refetch:tn}=Je({hostId:W,marketplacePath:tt,pluginName:o}),",
+    "Dn=async()=>{await $f({invalidateQueriesAndBroadcast:I,refetchPluginDetail:tn})},On=(0,tp.useEffectEvent)(Dn),",
+    "Na=(0,$.jsx)(qc,{connectedAccountInventory:null,blockedReason:null,isInstalled:K.summary.installed,",
+    "isUninstalling:Xi,isUpdatingEnabled:Zi,pluginIcon:Wi==null?void 0:(0,$.jsx)(c,{icon:Wi.icon}),",
+    "shareActions:Ma,onInstall:()=>{}});return Na}function next(){}",
+  ].join("");
+}
+
 function withTempDir(callback) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "plugin-update-button-"));
   try {
@@ -264,6 +277,17 @@ test("patches the current official Linux plugin detail action layout", () => {
   assert.match(patched, /requestClient:Ee\(b,G\)/u);
 });
 
+test("patches the 26.831 plugin detail action and refresh layout", () => {
+  const source = currentOfficialLinux2631PluginDetailFixture();
+  const patched = applyPluginUpdateButtonPatch(source);
+
+  assert.notEqual(patched, source);
+  assert.equal(applyPluginUpdateButtonPatch(patched), patched);
+  assert.equal(hasInstalledPluginUpdateButton(patched), true);
+  assert.match(patched, /children:\[\(0,\$\.jsx\)\(codexLinuxGitPluginUpdateButton,[\s\S]{0,1000}?,Ma\]\}\)/u);
+  assert.match(patched, /requestClient:I\(y,W\)/u);
+});
+
 test("composes the update button with an existing plugin share action", () => {
   const source = currentPluginDetailFixture().replace("shareActions:null", "shareActions:Ga");
   const patched = applyPluginUpdateButtonPatch(source);
@@ -288,7 +312,7 @@ test(
     assert.equal(hasInstalledPluginUpdateButton(patched), true);
     assert.match(
       patched,
-      /children:\[\(0,Qf\.jsx\)\(codexLinuxGitPluginUpdateButton,[\s\S]{0,1000}?,za\]\}\)/u,
+      /children:\[\(0,([A-Za-z_$][\w$]*)\.jsx\)\(codexLinuxGitPluginUpdateButton,[\s\S]{0,1000}?,([A-Za-z_$][\w$]*)\]\}\)/u,
     );
   },
 );
