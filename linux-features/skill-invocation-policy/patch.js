@@ -427,6 +427,15 @@ function hasInstalledSkillInvocationTrigger(source) {
     !source.includes("([/@$>])");
 }
 
+function matchesSkillInvocationComposerTriggerAsset(source) {
+  return source.includes("nodeBefore?.text") &&
+    (
+      source.includes("[/@$]") ||
+      source.includes("[/@$>]") ||
+      source.includes(COMPOSER_TRIGGER_PATCH_MARKER)
+    );
+}
+
 function hasInstalledSkillInvocationComposerUi(source) {
   if (
     countOccurrences(source, COMPOSER_PATCH_MARKER) !== 1 ||
@@ -757,7 +766,7 @@ const descriptors = [
     phase: "webview-asset",
     order: 20_681,
     ciPolicy: "opt-in",
-    pattern: /^app-initial(?:~artifact-tab-content\.electron~app-main~.*|-[A-Za-z0-9_-]+)\.js$/,
+    pattern: /^(?:(?:app-initial|app-primary)-[A-Za-z0-9_-]+|app-initial~artifact-tab-content\.electron~app-main~.*)\.js$/,
     assetMatch: (source) =>
       source.includes('$:`skill-mention`') &&
       source.includes("composer.skillMentionList.noResults"),
@@ -774,10 +783,8 @@ const descriptors = [
     phase: "webview-asset",
     order: 20_682,
     ciPolicy: "opt-in",
-    pattern: /^app-initial(?:~artifact-tab-content\.electron~app-main~.*|-[A-Za-z0-9_-]+)\.js$/,
-    assetMatch: (source) =>
-      source.includes("nodeBefore?.text") &&
-      (source.includes("[/@$]") || source.includes("[/@$>]")),
+    pattern: /^(?:(?:app-initial|app-primary)-[A-Za-z0-9_-]+|app-initial~artifact-tab-content\.electron~app-main~.*)\.js$/,
+    assetMatch: matchesSkillInvocationComposerTriggerAsset,
     missingDescription: "Skill composer trigger-parser webview bundle",
     skipDescription: "manual-only Skill composer trigger parser patch",
     requiredMarkers: [COMPOSER_TRIGGER_PATCH_MARKER],
@@ -804,6 +811,7 @@ module.exports = {
   hasInstalledSkillInvocationPolicy,
   hasInstalledSkillInvocationRegistration,
   hasInstalledSkillInvocationTrigger,
+  matchesSkillInvocationComposerTriggerAsset,
   skillInvocationComposerRuntimeSource,
   skillInvocationPolicyRuntimeSource,
 };

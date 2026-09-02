@@ -18,6 +18,7 @@ const breadcrumbDescriptors = require(
 const {
   INSTALL_MARKER,
   applyLinuxRendererCrashBreadcrumbsPatch,
+  matchesLinuxRendererCrashBreadcrumbsContract,
 } = require("./renderer-crash-breadcrumbs.js");
 
 const GLOBAL_ERROR_HANDLER =
@@ -26,6 +27,18 @@ const GLOBAL_ERROR_HANDLER =
 function fixture() {
   return `"use strict";(()=>{0,${GLOBAL_ERROR_HANDLER},globalThis.fixtureReady=true})();`;
 }
+
+test("renderer crash breadcrumbs select only the bundle owning the global handler", () => {
+  assert.equal(matchesLinuxRendererCrashBreadcrumbsContract(fixture()), true);
+  assert.equal(
+    matchesLinuxRendererCrashBreadcrumbsContract('window.addEventListener("error", handler);'),
+    false,
+  );
+  assert.equal(
+    matchesLinuxRendererCrashBreadcrumbsContract(`${fixture()}${GLOBAL_ERROR_HANDLER}`),
+    false,
+  );
+});
 
 test("renderer crash breadcrumbs reject marker-only partial state", () => {
   assert.throws(
@@ -208,9 +221,11 @@ test("renderer crash breadcrumb descriptor installs and verifies both markers", 
   const extractedDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-breadcrumbs-"));
   try {
     const assetsDir = path.join(extractedDir, "webview", "assets");
-    const assetPath = path.join(assetsDir, "app-main-fixture.js");
+    const assetPath = path.join(assetsDir, "app-initial-fixture.js");
+    const decoyPath = path.join(assetsDir, "app-main-decoy.js");
     fs.mkdirSync(assetsDir, { recursive: true });
     fs.writeFileSync(assetPath, fixture());
+    fs.writeFileSync(decoyPath, "console.log(`no global handler`);");
     const report = createPatchReport();
 
     applyWebviewAssetPatchDescriptors(
@@ -229,6 +244,7 @@ test("renderer crash breadcrumb descriptor installs and verifies both markers", 
       1,
     );
     assert.equal(patched.split("[codex-linux-renderer-breadcrumb]").length - 1, 1);
+    assert.equal(fs.readFileSync(decoyPath, "utf8"), "console.log(`no global handler`);");
   } finally {
     fs.rmSync(extractedDir, { force: true, recursive: true });
   }

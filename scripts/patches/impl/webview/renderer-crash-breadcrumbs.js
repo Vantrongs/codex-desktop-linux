@@ -212,6 +212,10 @@ function rendererCrashBreadcrumbRuntime() {
 
 const RUNTIME_EXPRESSION = `(${rendererCrashBreadcrumbRuntime.toString()})()`;
 
+function matchesLinuxRendererCrashBreadcrumbsContract(source) {
+  return [...source.matchAll(GLOBAL_ERROR_HANDLER_PATTERN)].length === 1;
+}
+
 function applyLinuxRendererCrashBreadcrumbsPatch(source) {
   if (source.includes(RUNTIME_EXPRESSION)) return source;
   if (source.includes(INSTALL_MARKER) || source.includes(CONSOLE_PREFIX)) {
@@ -238,4 +242,5 @@ function applyLinuxRendererCrashBreadcrumbsPatch(source) {
 module.exports = {
   INSTALL_MARKER,
   applyLinuxRendererCrashBreadcrumbsPatch,
+  matchesLinuxRendererCrashBreadcrumbsContract,
 };
