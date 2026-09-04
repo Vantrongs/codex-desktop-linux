@@ -13,9 +13,11 @@ const {
 
 function fixture() {
   return [
-    "function Gate(e,t){if(e==null||!t())return!1;let n=e.get(Store);",
-    "return n?.loadingStatus===`Ready`&&readFlag(n,`1865103671`).get(`enabled`,!1)===!0}",
-    "function Manager(){this.suppressResumeHistoryDrain=()=>Gate(scope,()=>this.supportsPaginatedThreadHistory());",
+    "function Settings(e){return{history:{useTailHydration:!0,canonicalTurnHistory:!0,",
+    "readPaginatedHistoryEnabled(){let t=e?.get(Store);return t?.loadingStatus===`Ready`&&",
+    "readFlag(t,Flags.paginatedHistory).get(`enabled`,!1)===!0},readCatalogConsumptionEnabled:()=>!0}}",
+    "function Manager(){this.suppressResumeHistoryDrain=this.runtimeSettings.suppressResumeHistoryDrain??",
+    "(()=>this.supportsPaginatedThreadHistory()&&settings.history.readPaginatedHistoryEnabled());",
     "this.loadRemainingConversationTurns=()=>request({source:`tail_history`})}",
   ].join("");
 }
@@ -29,15 +31,25 @@ test("supported paginated history suppresses the eager resume drain without a re
   assert.equal(applyLinuxThreadHistoryPaginationPatch(patched), patched);
   assert.equal(hasUnsafeThreadHistoryDrainGate(patched), false);
   assert.equal(patched.split(THREAD_HISTORY_PAGINATION_MARKER).length - 1, 1);
-  assert.match(patched, /function Gate\(e,t\)\{return t\(\)===!0\}/u);
-  assert.doesNotMatch(patched, /1865103671|loadingStatus===`Ready`/u);
+  assert.match(
+    patched,
+    /readPaginatedHistoryEnabled\(\)\{return void`codexLinuxThreadHistoryUsesServerPagination`,!0\}/u,
+  );
+  assert.doesNotMatch(patched, /Flags\.paginatedHistory|loadingStatus===`Ready`/u);
+  assert.match(
+    patched,
+    /supportsPaginatedThreadHistory\(\)&&settings\.history\.readPaginatedHistoryEnabled\(\)/u,
+  );
   assert.match(patched, /source:`tail_history`/u);
 });
 
 test("history pagination patch rejects marker-only and semantically damaged output", () => {
   const patched = applyLinuxThreadHistoryPaginationPatch(fixture());
   const markerOnly = `void\`${THREAD_HISTORY_PAGINATION_MARKER}\`;function unrelated(){}`;
-  const damaged = patched.replace("return t()===!0", "return!1");
+  const damaged = patched.replace(
+    `return void\`${THREAD_HISTORY_PAGINATION_MARKER}\`,!0`,
+    `return void\`${THREAD_HISTORY_PAGINATION_MARKER}\`,!1`,
+  );
 
   assert.throws(
     () => applyLinuxThreadHistoryPaginationPatch(markerOnly),
@@ -47,6 +59,36 @@ test("history pagination patch rejects marker-only and semantically damaged outp
   assert.throws(
     () => applyLinuxThreadHistoryPaginationPatch(damaged),
     /partial thread history pagination patch/u,
+  );
+});
+
+test("history pagination patch requires capability checking in the drain gate", () => {
+  const drifted =
+    fixture().replace(
+      "this.supportsPaginatedThreadHistory()&&settings.history",
+      "settings.history",
+    ) +
+    "function unrelated(){return this.supportsPaginatedThreadHistory()}";
+
+  assert.equal(isThreadHistoryPaginationAsset(drifted), false);
+  assert.throws(
+    () => applyLinuxThreadHistoryPaginationPatch(drifted),
+    /current thread history resume drain capability gate/u,
+  );
+});
+
+test("retired helper gate is rejected byte-identically", () => {
+  const retired = [
+    "function Gate(e,t){if(e==null||!t())return!1;let n=e.get(Store);",
+    "return n?.loadingStatus===`Ready`&&readFlag(n,`1865103671`).get(`enabled`,!1)===!0}",
+    "function Manager(){this.suppressResumeHistoryDrain=()=>Gate(scope,()=>this.supportsPaginatedThreadHistory());",
+    "this.loadRemainingConversationTurns=()=>request({source:`tail_history`})}",
+  ].join("");
+
+  assert.equal(isThreadHistoryPaginationAsset(retired), false);
+  assert.throws(
+    () => applyLinuxThreadHistoryPaginationPatch(retired),
+    /current thread history pagination settings gate/u,
   );
 });
 
