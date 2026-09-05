@@ -53,7 +53,7 @@ selector_fixture="$(mktemp -d)"
 trap 'rm -rf -- "$selector_fixture"' EXIT
 touch -t 202608120900 "$selector_fixture/codex-desktop_2026.08.12.community_amd64.deb"
 touch -t 202608121000 "$selector_fixture/codex-desktop_2026.08.12.100000_amd64.deb"
-selected_package="$(scripts/select-latest-package.sh "$selector_fixture/codex-desktop_*.deb")"
+selected_package="$(bash scripts/select-latest-package.sh "$selector_fixture/codex-desktop_*.deb")"
 [ "$selected_package" = "$selector_fixture/codex-desktop_2026.08.12.100000_amd64.deb" ] ||
     fail "package selector did not choose the newest artifact: $selected_package"
 
