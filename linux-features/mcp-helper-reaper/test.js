@@ -2,7 +2,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { spawnSync } = require("node:child_process");
+const { execFileSync, spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -15,6 +15,9 @@ const CLEANUP = path.join(FEATURE_DIR, "cleanup.sh");
 const INSTALL_SESSION_HOOK = path.join(FEATURE_DIR, "install-session-hook.sh");
 const COLD_START_HOOK = path.join(FEATURE_DIR, "cold-start-hook.sh");
 const LAUNCHER_TEMPLATE = path.join(REPO_ROOT, "launcher", "start.sh.template");
+const BASH_PATH = execFileSync("bash", ["-c", "command -v bash"], {
+  encoding: "utf8",
+}).trim();
 
 function makeTempDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -262,6 +265,7 @@ test("staged lifecycle hooks reach the reaper through the launcher", async () =>
   const codexHome = path.join(tempDir, "codex-home");
   const launcher = fs
     .readFileSync(LAUNCHER_TEMPLATE, "utf8")
+    .replace(/^#!\/bin\/bash\n/u, `#!${BASH_PATH}\n`)
     .replaceAll("__CODEX_LINUX_APP_ID__", "codex-desktop")
     .replaceAll("__CODEX_LINUX_APP_DISPLAY_NAME__", "ChatGPT Community");
 
