@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -Eeuo pipefail
 
 pattern_path="${1:?usage: select-latest-package.sh /path/to/package-pattern}"

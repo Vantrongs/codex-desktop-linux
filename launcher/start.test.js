@@ -26,7 +26,7 @@ function createApp(t) {
   const launcher = fs.readFileSync(templatePath, "utf8")
     .replaceAll("__CODEX_LINUX_APP_ID__", "codex-desktop")
     .replaceAll("__CODEX_LINUX_APP_DISPLAY_NAME__", "ChatGPT Community");
-  writeExecutable(path.join(root, "start.sh"), launcher);
+  fs.writeFileSync(path.join(root, "start.sh"), launcher, { mode: 0o755 });
   for (const relative of ["resources/app.asar", "resources/codex", "resources/rg", "resources/codex-code-mode-host"]) {
     const target = path.join(root, relative);
     fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -124,6 +124,7 @@ printf 'unexpected\\n' >> "$TEST_ROOT/curl-calls"
   const missingRoot = createApp(t);
   const missingBin = path.join(missingRoot, "bin");
   fs.mkdirSync(missingBin, { recursive: true });
+  fs.symlinkSync(bashPath, path.join(missingBin, "bash"));
   fs.symlinkSync(dirnamePath, path.join(missingBin, "dirname"));
   const missing = childProcess.spawnSync(path.join(missingRoot, "start.sh"), [], {
     env: {

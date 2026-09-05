@@ -53,9 +53,26 @@ selector_fixture="$(mktemp -d)"
 trap 'rm -rf -- "$selector_fixture"' EXIT
 touch -t 202608120900 "$selector_fixture/codex-desktop_2026.08.12.community_amd64.deb"
 touch -t 202608121000 "$selector_fixture/codex-desktop_2026.08.12.100000_amd64.deb"
-selected_package="$(bash scripts/select-latest-package.sh "$selector_fixture/codex-desktop_*.deb")"
+selected_package="$(scripts/select-latest-package.sh "$selector_fixture/codex-desktop_*.deb")"
 [ "$selected_package" = "$selector_fixture/codex-desktop_2026.08.12.100000_amd64.deb" ] ||
     fail "package selector did not choose the newest artifact: $selected_package"
+
+launcher_fixture="$selector_fixture/codex-launcher"
+mkdir -p "$launcher_fixture/resources"
+sed \
+    -e 's/__CODEX_LINUX_APP_ID__/codex-launcher-smoke/g' \
+    -e 's/__CODEX_LINUX_APP_DISPLAY_NAME__/Codex Launcher Smoke/g' \
+    launcher/start.sh.template > "$launcher_fixture/start.sh"
+chmod 0755 "$launcher_fixture/start.sh"
+touch \
+    "$launcher_fixture/ChatGPT" \
+    "$launcher_fixture/resources/app.asar" \
+    "$launcher_fixture/resources/codex" \
+    "$launcher_fixture/resources/rg" \
+    "$launcher_fixture/resources/codex-code-mode-host"
+launcher_diagnose="$(CODEX_LINUX_DISABLE_USAGE_REPORTING=1 "$launcher_fixture/start.sh" --diagnose)"
+[ "$(printf '%s\n' "$launcher_diagnose" | grep -c '^ok: ')" -eq 5 ] ||
+    fail "generated launcher did not execute directly through its declared interpreter"
 
 SCRIPT_DIR="$REPO_DIR"
 . scripts/lib/asar-patch.sh
