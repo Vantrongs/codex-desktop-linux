@@ -120,9 +120,13 @@ test("descriptor anchor is unique and patching is idempotent", () => {
 });
 
 test("Computer Use composition has one Nix staging permission owner", () => {
-  const descriptors = descriptorsFor(["computer-use-linux", FEATURE_ID]);
+  const descriptors = descriptorsFor([
+    "computer-use-linux",
+    "nixos-git-watcher-compatibility",
+    FEATURE_ID,
+  ]);
   const stagingDescriptors = descriptors.filter(({ id }) =>
-    id.includes("staging") && id.includes("permission"));
+    /bundled.*(?:writable|permission)|staging.*permission/u.test(id));
   assert.deepEqual(stagingDescriptors.map(({ id }) => id), [DESCRIPTOR_ID]);
   assert.match(stagingDescriptors[0].apply(FIXTURE), new RegExp(PATCH_MARKER));
 });

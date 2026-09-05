@@ -11,10 +11,12 @@ app-server reports pagination support; older turns remain available on demand.
 The existing paginated resume contract retains only the five newest turns in
 renderer memory initially and loads older turns in five-turn pages. Pages that
 were loaded while browsing are cleared when the inactive thread is unsubscribed.
-For paginated threads, the navigation rail uses the app-server's complete turn
-index instead of replaying the displayed history. The rail is withheld until
-the complete index is available, and a selected prompt/answer preview is loaded
-from indexed storage only when needed.
+For paginated threads, the official 26.901 navigation rail now uses the
+app-server's complete turn index without the retired remote flag instead of
+replaying the displayed history. The feature verifies that contract
+fail-closed without rewriting the signed webview bundle. The rail is withheld
+until the complete index is available, and a selected prompt/answer preview is
+loaded from indexed storage only when needed.
 
 Legacy root threads can be converted once with the official CLI's atomic rollout
 migrator. Inspection is the default; `--apply` is explicit and selection can be
@@ -31,16 +33,17 @@ paginated rollout and SQLite projection before publishing it. Subagent rollouts
 are skipped; after a root is paginated, new v2 subagents inherit paginated
 history from it.
 
-The subagent status patch treats only an explicit current `active` status as
-working; `notLoaded`, `idle`, and missing current status remain inactive while
-the independent open spawn edge is preserved for explicit resume. The current
-official topology-recovery path already keeps only spawn metadata plus one
-content-free final turn; this feature verifies that contract fail-closed instead
-of rewriting it. A child thread's content is loaded only when that thread is
-explicitly opened or otherwise addressed. An inactive owned thread is
-unsubscribed after 30 minutes, which removes its turns from renderer memory; the
-app-server's existing 30-minute idle-unload then removes the cold runtime. Active
-views, running turns, approvals, and pending user input remain loaded.
+The official 26.901 subagent projector now treats only an explicit current
+`active` status as working; `notLoaded` and `idle` are done, while a missing
+status can consult live turn state only until topology discovery completes.
+The feature verifies that contract fail-closed without rewriting it. The
+current official topology-recovery path already keeps only spawn metadata plus
+one content-free final turn and is verified the same way. A child thread's
+content is loaded only when that thread is explicitly opened or otherwise
+addressed. An inactive owned thread is unsubscribed after 30 minutes, which
+removes its turns from renderer memory; the app-server's existing 30-minute
+idle-unload then removes the cold runtime. Active views, running turns,
+approvals, and pending user input remain loaded.
 
 Enable it in `linux-features/features.json` only for a reproduced regression:
 

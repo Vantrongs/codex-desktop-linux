@@ -193,13 +193,13 @@ function patchExtractedApp(extractedDir, options = {}) {
 function allPatchPolicies(options = {}) {
   return [
     ...corePatchDescriptors(options).map(({ id, name, ciPolicy, phase, appliesTo }) => ({
-      name: name ?? id,
+      name: id ?? name,
       ciPolicy,
       phase,
       appliesTo,
     })),
     ...featurePatchDescriptors(featurePatchOptions(options)).map(({ id, name, ciPolicy, phase, appliesTo }) => ({
-      name: name ?? id,
+      name: id ?? name,
       ciPolicy,
       phase,
       appliesTo,

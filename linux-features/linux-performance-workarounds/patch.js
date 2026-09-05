@@ -20,12 +20,10 @@ const {
   isThreadHistoryPaginationAsset,
 } = require("../../scripts/patches/impl/webview/thread-history-pagination.js");
 const {
-  THREAD_NAVIGATION_HISTORY_INDEX_MARKER,
   applyLinuxThreadNavigationHistoryIndexPatch,
   isThreadNavigationHistoryIndexAsset,
 } = require("../../scripts/patches/impl/webview/thread-navigation-history-index.js");
 const {
-  SUBAGENT_RUNTIME_STATUS_MARKER,
   applyLinuxSubagentRuntimeStatusPatch,
   isSubagentRuntimeStatusAsset,
 } = require("../../scripts/patches/impl/webview/subagent-runtime-status.js");
@@ -123,7 +121,6 @@ module.exports = [
     assetMatch: isThreadNavigationHistoryIndexAsset,
     missingDescription: "thread navigation history index webview bundle",
     skipDescription: "Linux thread navigation history index patch",
-    requiredMarkers: [THREAD_NAVIGATION_HISTORY_INDEX_MARKER],
     apply: applyLinuxThreadNavigationHistoryIndexPatch,
   }),
   webviewAssetPatch({
@@ -155,7 +152,6 @@ module.exports = [
     assetMatch: isSubagentRuntimeStatusAsset,
     missingDescription: "subagent runtime status projection webview bundle",
     skipDescription: "Linux subagent runtime status reconciliation patch",
-    requiredMarkers: [SUBAGENT_RUNTIME_STATUS_MARKER],
     apply: applyLinuxSubagentRuntimeStatusPatch,
   }),
 ];

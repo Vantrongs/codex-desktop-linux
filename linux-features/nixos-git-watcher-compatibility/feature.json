@@ -1,7 +1,7 @@
 {
   "id": "nixos-git-watcher-compatibility",
   "title": "NixOS Runtime Compatibility",
-  "description": "Adapt read-only Nix store payloads for the Git watcher and writable bundled-plugin runtime copies.",
+  "description": "Keep the Parcel Git watcher compatible with patchelf-rewritten Electron binaries on NixOS.",
   "defaultEnabled": false,
   "entrypoints": {
     "patchDescriptors": "./patch.js"

@@ -1,115 +1,112 @@
 "use strict";
 
-const THREAD_NAVIGATION_HISTORY_INDEX_MARKER =
-  "codexLinuxThreadNavigationUsesHistoryIndex";
-const IDENTIFIER = "[A-Za-z_$][\\w$]*";
+const { findMatchingBrace } = require("../../lib/minified-js.js");
 
-const UPSTREAM_FLAG_PATTERN = new RegExp(
-  `(${IDENTIFIER})=(${IDENTIFIER})\\(` + "`209459230`" + `\\)`,
-  "gu",
-);
-const INSTALLED_FLAG_PATTERN = new RegExp(
-  `(${IDENTIFIER})=\\(void` +
-    "`" +
-    THREAD_NAVIGATION_HISTORY_INDEX_MARKER +
-    "`" +
-    `,!0\\)`,
-  "gu",
-);
+const IDENTIFIER = "[A-Za-z_$][\\w$]*";
+const RETIRED_UPSTREAM_FLAG = "209459230";
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
-function matchesHistoryIndexContract(source, flagName, flagIndex) {
-  const functionStart = source.lastIndexOf("function ", flagIndex);
-  const functionEnd = source.indexOf("function ", flagIndex);
-  if (functionStart < 0 || functionEnd < 0) return false;
+function containingFunction(source, index) {
+  const prefix = source.slice(0, index);
+  const starts = [
+    ...prefix.matchAll(
+      new RegExp(`function ${IDENTIFIER}\\([^)]*\\)\\{`, "gu"),
+    ),
+  ];
+  for (const match of starts.reverse()) {
+    const open = match.index + match[0].length - 1;
+    const close = findMatchingBrace(source, open);
+    if (close >= index) {
+      return { start: match.index, text: source.slice(match.index, close + 1) };
+    }
+  }
+  return null;
+}
 
-  const threadFunction = source.slice(functionStart, functionEnd);
-  const id = IDENTIFIER;
-  const railGate = new RegExp(
-    `${id}=${escapeRegExp(flagName)}&&${id}==null&&` +
-      `${id}===` +
-      "`paginated`" +
-      `&&!${id},${id}=${id}&&!${id}&&${id}!==` +
-      "`subagent`" +
-      `,\\{data:${id}\\}=${id}\\(${id},${id}\\?${id}:null\\),` +
-      `${id}=${id}&&${id}\\?\\.complete===!0`,
+function promptRailQuerySymbol(source) {
+  const queryKey = "queryKey:[`prompt-rail-history`,";
+  const queryIndex = source.indexOf(queryKey);
+  if (queryIndex < 0 || source.indexOf(queryKey, queryIndex + 1) >= 0) return null;
+
+  const prefixStart = Math.max(0, queryIndex - 1_000);
+  const prefix = source.slice(prefixStart, queryIndex);
+  const assignments = [
+    ...prefix.matchAll(
+      new RegExp(`(${IDENTIFIER})=${IDENTIFIER}\\(${IDENTIFIER},\\(`, "gu"),
+    ),
+  ];
+  return assignments.at(-1)?.[1] ?? null;
+}
+
+function hasCompletePromptRailIndex(source) {
+  const required = [
+    "itemsView:`notLoaded`,sortDirection:`desc`",
+    "itemsView:`full`,sortDirection:`desc`",
+    "prompt-rail-history",
+  ];
+  if (!required.every((anchor) => source.includes(anchor))) return false;
+
+  const complete = new RegExp(
+    `\\.nextCursor==null\\)return\\{items:${IDENTIFIER}\\.reverse\\(\\),complete:!0\\}`,
     "u",
   );
-  if (!railGate.test(threadFunction)) return false;
-
-  const queryIndex = source.indexOf("prompt-rail-history");
-  if (queryIndex < 0) return false;
-  const queryModule = source.slice(
-    Math.max(0, queryIndex - 2_500),
-    queryIndex + 1_000,
+  const incomplete = new RegExp(
+    `return\\{items:${IDENTIFIER}\\.reverse\\(\\),complete:!1\\}`,
+    "u",
   );
-  return (
-    queryModule.includes("itemsView:`notLoaded`,sortDirection:`desc`") &&
-    queryModule.includes("nextCursor==null)return{items:r.reverse(),complete:!0}") &&
-    queryModule.includes("return{items:r.reverse(),complete:!1}") &&
-    queryModule.includes("itemsView:`full`,sortDirection:`desc`")
+  return complete.test(source) && incomplete.test(source);
+}
+
+function hasOfficialThreadNavigationHistoryIndex(source) {
+  if (source.includes(RETIRED_UPSTREAM_FLAG) || !hasCompletePromptRailIndex(source)) {
+    return false;
+  }
+
+  const querySymbol = promptRailQuerySymbol(source);
+  if (querySymbol == null) return false;
+  const usagePattern = new RegExp(
+    `\\{data:(?<data>${IDENTIFIER})\\}=(?<reader>${IDENTIFIER})\\(` +
+      `${escapeRegExp(querySymbol)},(?<enabled>${IDENTIFIER})\\?(?<thread>${IDENTIFIER}):null\\),` +
+      `(?<complete>${IDENTIFIER})=\\k<enabled>&&\\k<data>\\?\\.complete===!0`,
+    "gu",
   );
-}
+  const usages = [...source.matchAll(usagePattern)];
+  if (usages.length !== 1) return false;
 
-function installedFlags(source) {
-  return [...source.matchAll(new RegExp(INSTALLED_FLAG_PATTERN.source, "gu"))];
-}
-
-function upstreamFlags(source) {
-  return [...source.matchAll(new RegExp(UPSTREAM_FLAG_PATTERN.source, "gu"))];
-}
-
-function hasInstalledThreadNavigationHistoryIndex(source) {
-  const installed = installedFlags(source);
+  const usage = usages[0];
+  const owner = containingFunction(source, usage.index);
+  if (owner == null) return false;
+  const localUsageIndex = usage.index - owner.start;
+  const prefix = owner.text.slice(0, localUsageIndex);
+  const assignmentStart = prefix.lastIndexOf(`${usage.groups.enabled}=`);
+  if (assignmentStart < 0) return false;
+  const gate = prefix.slice(assignmentStart + usage.groups.enabled.length + 1);
   return (
-    source.split(THREAD_NAVIGATION_HISTORY_INDEX_MARKER).length - 1 === 1 &&
-    installed.length === 1 &&
-    upstreamFlags(source).length === 0 &&
-    matchesHistoryIndexContract(source, installed[0][1], installed[0].index)
+    gate.includes("===`paginated`") &&
+    gate.includes("===`legacy`") &&
+    gate.includes("!==`subagent`") &&
+    !gate.includes("readFlag")
   );
 }
 
 function isThreadNavigationHistoryIndexAsset(source) {
-  if (source.includes(THREAD_NAVIGATION_HISTORY_INDEX_MARKER)) {
-    return hasInstalledThreadNavigationHistoryIndex(source);
-  }
-  const upstream = upstreamFlags(source);
-  return (
-    upstream.length === 1 &&
-    matchesHistoryIndexContract(source, upstream[0][1], upstream[0].index)
-  );
+  return hasOfficialThreadNavigationHistoryIndex(source);
 }
 
 function applyLinuxThreadNavigationHistoryIndexPatch(source) {
-  if (source.includes(THREAD_NAVIGATION_HISTORY_INDEX_MARKER)) {
-    if (hasInstalledThreadNavigationHistoryIndex(source)) return source;
-    throw new Error("Found partial thread navigation history index patch");
+  if (!hasOfficialThreadNavigationHistoryIndex(source)) {
+    throw new Error(
+      "Current thread navigation does not satisfy the flag-free metadata index contract",
+    );
   }
-
-  const upstream = upstreamFlags(source);
-  if (
-    upstream.length !== 1 ||
-    !matchesHistoryIndexContract(source, upstream[0][1], upstream[0].index)
-  ) {
-    throw new Error("Could not find unique thread navigation history index gate");
-  }
-
-  const match = upstream[0];
-  const replacement =
-    `${match[1]}=(void\`${THREAD_NAVIGATION_HISTORY_INDEX_MARKER}\`,!0)`;
-  return (
-    source.slice(0, match.index) +
-    replacement +
-    source.slice(match.index + match[0].length)
-  );
+  return source;
 }
 
 module.exports = {
-  THREAD_NAVIGATION_HISTORY_INDEX_MARKER,
   applyLinuxThreadNavigationHistoryIndexPatch,
-  hasInstalledThreadNavigationHistoryIndex,
+  hasOfficialThreadNavigationHistoryIndex,
   isThreadNavigationHistoryIndexAsset,
 };

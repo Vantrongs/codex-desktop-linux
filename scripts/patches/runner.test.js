@@ -25,6 +25,37 @@ test("official baseline has no core descriptors or required patch policies", () 
   assert.deepEqual(requiredPatchNamesForProfile("upstream-build", { featuresConfigPath: emptyConfig }), []);
 });
 
+test("required feature policy names match their patch-report descriptor IDs", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "runner-required-feature-ids-"));
+  try {
+    const config = path.join(temp, "features.json");
+    fs.writeFileSync(
+      config,
+      '{"enabled":["linux-performance-workarounds","linux-renderer-crash-diagnostics"]}\n',
+    );
+    const required = requiredPatchNamesForProfile("upstream-build", {
+      featuresConfigPath: config,
+    });
+
+    assert.equal(required.length, 10);
+    assert.equal(required.every((name) => name.startsWith("feature:")), true);
+    assert.equal(
+      required.includes(
+        "feature:linux-performance-workarounds:linux-thread-navigation-history-index",
+      ),
+      true,
+    );
+    assert.equal(
+      required.includes(
+        "feature:linux-renderer-crash-diagnostics:linux-renderer-crash-diagnostics",
+      ),
+      true,
+    );
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
 test("runner context exposes enabled feature IDs", () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "runner-context-"));
   try {

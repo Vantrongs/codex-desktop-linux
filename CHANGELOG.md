@@ -38,6 +38,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- The 26.901 thread-navigation index and subagent runtime-status workarounds
+  now verify the equivalent official contracts without rewriting the webview.
+  Nix bundled-plugin staging permissions have one owner in the internal Nix
+  feature instead of being applied a second time by watcher compatibility.
+- Required feature validation again compares canonical prefixed descriptor IDs
+  with the patch report, so enabled required patches are not reported missing
+  after they have successfully run.
 - Remote mobile control now relies on the current upstream account-enrollment
   compatibility and Connections tab resolver instead of patching duplicate
   Linux-specific fallbacks into those paths.
