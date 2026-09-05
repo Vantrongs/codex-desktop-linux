@@ -560,7 +560,7 @@
                 --set-default BAMF_DESKTOP_FILE_HINT "$out/share/applications/codex-desktop.desktop" \
                 --set-default CODEX_CLI_PATH "$app/resources/codex" \
                 --add-flags "$app/start.sh" \
-                --add-flags "\''${NIXOS_OZONE_WL:+\''${WAYLAND_DISPLAY:+--ozone-platform=wayland --enable-wayland-ime=true --wayland-text-input-version=3}}"
+                --run 'if [ -n "''${NIXOS_OZONE_WL-}" ] && [ -n "''${WAYLAND_DISPLAY-}" ]; then set -- "$@" --ozone-platform=wayland --enable-wayland-ime=true --wayland-text-input-version=3; fi'
               node "$source_dir/nix/elf-runtime.cjs" audit \
                 --root "$app" \
                 --arch ${officialPackage.architecture} \
@@ -893,7 +893,7 @@
             "$capture"
           ${pkgs.gnugrep}/bin/grep -Fx 'ld=x:/caller/lib' "$capture"
           ${pkgs.gnugrep}/bin/grep -Fx \
-            'args=<--ozone-platform=wayland><--enable-wayland-ime=true><--wayland-text-input-version=3><--diagnose>' \
+            'args=<--diagnose><--ozone-platform=wayland><--enable-wayland-ime=true><--wayland-text-input-version=3>' \
             "$capture"
           ${pkgs.coreutils}/bin/env ALSA_PLUGIN_DIR=/caller/alsa XDG_DATA_DIRS=/caller/share \
             BAMF_DESKTOP_FILE_HINT=/caller/desktop LD_LIBRARY_PATH= \
@@ -903,6 +903,11 @@
           ${pkgs.gnugrep}/bin/grep -Fx 'xdg=x:${gsettingsSchemaDataDirs}:/caller/share' "$capture"
           ${pkgs.gnugrep}/bin/grep -Fx 'ld=x:' "$capture"
           ${pkgs.gnugrep}/bin/grep -Fx 'bamf=/caller/desktop' "$capture"
+          diagnose_output="$(${pkgs.coreutils}/bin/env \
+            -u BASH_ENV -u CODEX_NIX_ENV_CAPTURE \
+            NIXOS_OZONE_WL=1 WAYLAND_DISPLAY=wayland-1 \
+            ${package}/bin/codex-desktop --diagnose)"
+          test "$(printf '%s\n' "$diagnose_output" | ${pkgs.gnugrep}/bin/grep -c '^ok: ')" -eq 5
         '';
         bwrapArgumentProbeSource = pkgs.writeText "codex-nix-bwrap-argument-probe.c" ''
           #include <stdio.h>
