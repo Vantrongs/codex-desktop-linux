@@ -75,7 +75,7 @@ function createFixture() {
     extensionHostName: HOST_NAME,
     extensionIds: [EXTENSION_ID],
   })}\n`);
-  fs.writeFileSync(hostPath, `#!/usr/bin/bash\nprintf started >> '${hostMarker}'\ncat\n`, { mode: 0o700 });
+  fs.writeFileSync(hostPath, `#!${BASH}\nprintf started >> '${hostMarker}'\ncat\n`, { mode: 0o700 });
   fs.writeFileSync(registryPath, `${JSON.stringify({
     schemaVersion: 2,
     entries: [{
@@ -342,7 +342,7 @@ test("relay drains a final host response before closing the browser pipe", async
   const outputSize = 4 * 1024 * 1024;
   fs.writeFileSync(
     fixture.hostPath,
-    `#!/usr/bin/bash\nhead -c ${outputSize} /dev/zero\n`,
+    `#!${BASH}\nhead -c ${outputSize} /dev/zero\n`,
     { mode: 0o700 },
   );
   try {

@@ -307,6 +307,7 @@ exit 7
     env: {
       ...process.env,
       CODEX_HOME: codexHome,
+      CODEX_OZONE_PLATFORM: "x11",
       CODEX_LINUX_DISABLE_USAGE_REPORTING: "1",
       CODEX_MCP_HELPER_REAPER_DISABLE: "0",
       CODEX_MCP_HELPER_REAPER_DISABLE_HOOK: "0",
@@ -330,6 +331,7 @@ exit 7
   assert.match(calls, /^after-exit\t.*--all-codex-parents/m);
   assert.deepEqual(fs.readFileSync(appArgs, "utf8").trim().split("\n"), [
     "--class=codex-desktop",
+    "--ozone-platform=x11",
     "codex://thread/123",
   ]);
   assert.match(fs.readFileSync(path.join(codexHome, "hooks.json"), "utf8"), /codex-mcp-helper-reaper-session/);
