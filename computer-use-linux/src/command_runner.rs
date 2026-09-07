@@ -33,6 +33,26 @@ pub(crate) async fn output_with_timeout(
     output_with_input(command, action, timeout, None).await
 }
 
+/// Large binary captures need their own bounded stdout budget, not the small
+/// command/IPC budget. Stderr and process-tree cancellation remain unchanged.
+pub(crate) async fn output_with_stdout_limit(
+    mut command: Command,
+    action: &str,
+    timeout: Duration,
+    stdout_limit: usize,
+) -> Result<Output> {
+    command
+        .kill_on_drop(true)
+        .process_group(0)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let child = command
+        .spawn()
+        .with_context(|| format!("failed to {action}"))?;
+    supervise_child_with_limit(child, action, timeout, None, stdout_limit).await
+}
+
 pub(crate) async fn output_with_stdin(
     command: Command,
     action: &str,
@@ -148,10 +168,20 @@ pub(crate) async fn output_child(child: Child, action: &str, timeout: Duration) 
 }
 
 async fn supervise_child(
+    child: Child,
+    action: &str,
+    timeout: Duration,
+    input: Option<Vec<u8>>,
+) -> Result<Output> {
+    supervise_child_with_limit(child, action, timeout, input, MAX_COMMAND_OUTPUT_BYTES).await
+}
+
+async fn supervise_child_with_limit(
     mut child: Child,
     action: &str,
     timeout: Duration,
     input: Option<Vec<u8>>,
+    stdout_limit: usize,
 ) -> Result<Output> {
     let pid = child
         .id()
@@ -166,8 +196,8 @@ async fn supervise_child(
         .stderr
         .take()
         .context("command stderr was not piped")?;
-    let stdout_reader = tokio::spawn(read_pipe(stdout));
-    let stderr_reader = tokio::spawn(read_pipe(stderr));
+    let stdout_reader = tokio::spawn(read_pipe(stdout, stdout_limit));
+    let stderr_reader = tokio::spawn(read_pipe(stderr, MAX_COMMAND_OUTPUT_BYTES));
     let stdin_writer = match input {
         Some(input) => {
             let mut stdin = child.stdin.take().context("command stdin was not piped")?;
@@ -306,7 +336,7 @@ async fn supervise_command(
     let _ = result_tx.send(result);
 }
 
-async fn read_pipe(mut pipe: impl AsyncRead + Unpin) -> std::io::Result<Vec<u8>> {
+async fn read_pipe(mut pipe: impl AsyncRead + Unpin, limit: usize) -> std::io::Result<Vec<u8>> {
     let mut output = Vec::new();
     let mut buffer = [0_u8; 8192];
     loop {
@@ -314,9 +344,9 @@ async fn read_pipe(mut pipe: impl AsyncRead + Unpin) -> std::io::Result<Vec<u8>>
         if length == 0 {
             break;
         }
-        if output.len().saturating_add(length) > MAX_COMMAND_OUTPUT_BYTES {
+        if output.len().saturating_add(length) > limit {
             return Err(std::io::Error::other(format!(
-                "command output exceeded {MAX_COMMAND_OUTPUT_BYTES} bytes"
+                "command output exceeded {limit} bytes"
             )));
         }
         output.extend_from_slice(&buffer[..length]);

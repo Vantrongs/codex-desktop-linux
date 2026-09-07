@@ -114,7 +114,7 @@
           ++ lib.optionals (
             lib.elem "read-aloud" featureIds || lib.elem "read-aloud-mcp" featureIds
           ) [ pkgs.alsa-utils ]
-          ++ lib.optionals (lib.elem "computer-use-linux" featureIds) [ pkgs.glib ];
+          ++ lib.optionals (lib.elem "computer-use-linux" featureIds) [ pkgs.glib pkgs.grim ];
         runtimePathFor = featureIds:
           lib.makeBinPath (lib.unique (
             baseRuntimePackages ++ featureRuntimePackages featureIds

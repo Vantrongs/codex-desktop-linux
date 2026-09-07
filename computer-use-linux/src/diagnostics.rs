@@ -121,6 +121,7 @@ pub struct PlatformReport {
     pub xdg_runtime_dir: Option<String>,
     pub gnome_shell_version: Check,
     pub gnome_screenshot: Check,
+    pub grim: Check,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -311,18 +312,24 @@ fn capability_map_with_portal_keyboard(
     }
 
     let mut screenshot_backends = Vec::new();
-    if platform.gnome_shell_version.ok {
-        screenshot_backends.push("gnome_shell".to_string());
-    }
-    if windowing.codex_gnome_shell_extension_screenshot.ok {
-        screenshot_backends.push("gnome_shell_extension".to_string());
-    }
-    if portals.screenshot.ok {
-        screenshot_backends.push("portal".to_string());
-    }
-    // Subprocess fallback for background/systemd contexts the DBus paths reject.
-    if platform.gnome_screenshot.ok {
-        screenshot_backends.push("gnome_screenshot".to_string());
+    if is_niri_desktop(platform.xdg_current_desktop.as_deref()) {
+        if platform.grim.ok {
+            screenshot_backends.push("grim".to_string());
+        }
+    } else {
+        if platform.gnome_shell_version.ok {
+            screenshot_backends.push("gnome_shell".to_string());
+        }
+        if windowing.codex_gnome_shell_extension_screenshot.ok {
+            screenshot_backends.push("gnome_shell_extension".to_string());
+        }
+        if portals.screenshot.ok {
+            screenshot_backends.push("portal".to_string());
+        }
+        // Subprocess fallback for background/systemd contexts the DBus paths reject.
+        if platform.gnome_screenshot.ok {
+            screenshot_backends.push("gnome_screenshot".to_string());
+        }
     }
 
     let mut window_backends = Vec::new();
@@ -669,6 +676,14 @@ pub fn setup_accessibility_report() -> SetupReport {
     }
 }
 
+pub(crate) fn is_niri_desktop(desktop: Option<&str>) -> bool {
+    desktop.is_some_and(|desktop| {
+        desktop
+            .split(':')
+            .any(|name| name.eq_ignore_ascii_case("niri"))
+    })
+}
+
 fn platform_report() -> PlatformReport {
     PlatformReport {
         os: std::env::consts::OS.to_string(),
@@ -683,6 +698,7 @@ fn platform_report() -> PlatformReport {
         xdg_runtime_dir: xdg_runtime_dir().map(|path| path.display().to_string()),
         gnome_shell_version: command_check("gnome-shell", &["--version"]),
         gnome_screenshot: command_check("gnome-screenshot", &["--version"]),
+        grim: command_check("grim", &["-h"]),
     }
 }
 
@@ -1501,6 +1517,7 @@ mod tests {
             xdg_runtime_dir: Some("/run/user/1000".to_string()),
             gnome_shell_version: Check::ok("GNOME Shell 46.0"),
             gnome_screenshot: Check::ok("gnome-screenshot 41.0"),
+            grim: Check::fail("missing"),
         }
     }
 
@@ -1702,6 +1719,38 @@ mod tests {
         assert!(process_env_has_graphical_display(&with_display));
         assert!(process_env_has_graphical_display(&with_wayland));
         assert!(!process_env_has_graphical_display(&without_display));
+    }
+
+    #[test]
+    fn niri_capabilities_use_grim_instead_of_portal() {
+        let mut platform = platform_report();
+        platform.xdg_current_desktop = Some("niri".into());
+        platform.grim = Check::ok("grim");
+        let input = InputReport {
+            ydotool: Check::fail("missing"),
+            ydotoold: Check::fail("missing"),
+            ydotool_socket: Check::fail("missing"),
+            uinput: Check::fail("missing"),
+            xdotool: Check::fail("missing"),
+        };
+        let capabilities = capability_map(
+            &platform,
+            &portal_report(Check::fail("missing")),
+            &accessibility_report(Check::fail("missing"), Check::fail("missing")),
+            &windowing_report(false, false),
+            &input,
+        );
+        assert_eq!(capabilities.screenshot, ["grim"]);
+        assert_eq!(capabilities.preferred.screenshot.as_deref(), Some("grim"));
+        platform.grim = Check::fail("missing");
+        let capabilities = capability_map(
+            &platform,
+            &portal_report(Check::ok("available")),
+            &accessibility_report(Check::fail("missing"), Check::fail("missing")),
+            &windowing_report(false, false),
+            &input,
+        );
+        assert!(capabilities.screenshot.is_empty());
     }
 
     #[test]

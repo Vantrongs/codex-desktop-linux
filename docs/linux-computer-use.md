@@ -17,7 +17,8 @@ for its limitations.
 It supports:
 
 - app listing and accessibility trees through AT-SPI
-- screenshots through GNOME Shell DBus, the Codex GNOME Shell extension, or XDG Desktop Portal
+- screenshots through GNOME Shell DBus, the Codex GNOME Shell extension, XDG Desktop Portal,
+  or `grim` on Niri
 - window listing and focusing on GNOME, KWin/Plasma 5 and 6, Hyprland, Niri,
   COSMIC, i3, and generic X11/EWMH window managers; GNOME extension and X11
   windows can also be moved and resized
@@ -98,6 +99,27 @@ Niri window listing and exact focus use the `niri` command and the active
 session's `NIRI_SOCKET`. The Computer Use backend hydrates `NIRI_SOCKET` for GUI
 starts, but the socket must still belong to the active Niri session and be
 reachable by the desktop user.
+
+For window screenshots and relative coordinate input, this fork requires
+`niri msg --json window-geometry --id <id>` from the paired Niri fork. Stock
+Niri's nullable tiled layout positions are not sufficient. Restart the Niri
+session after updating its binary; an old compositor cannot serve the new
+request. Geometry is queried on demand for the exact focused window, never
+guessed from tile sizes. Locked, unfocused, dragged, or transitioning windows
+fail closed, as do compositor overlays and layer-shell input focus. A screenshot
+is rejected if geometry changes during capture. Relative input revalidates the
+snapshot after backend preparation and before dispatch; changed placement or
+focus cancels the action without replay.
+
+Niri capture uses `grim` directly (included in the Nix feature runtime), not
+the GNOME/portal fallback chain. Other distributions must install `grim`.
+Doctor reports this same backend. Raw capture has a separate 15-second / 128-MiB
+stdout limit so detailed PNGs can reach the normal resize/payload-budget stage;
+the returned screenshot budget is unchanged.
+An explicit `CODEX_COMPUTER_USE_SCREENSHOT_BACKEND` still takes precedence;
+`grim` is also accepted as an explicit backend. Capture dimensions must have a
+uniform scale relative to the logical desktop; incompatible layouts fail with
+an error rather than misdirecting clicks.
 
 The former `x11-ewmh-computer-use` alternative has been retired. The retained
 `computer-use-linux` backend owns generic X11/EWMH support on both official

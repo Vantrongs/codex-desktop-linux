@@ -16,6 +16,7 @@ use crate::screenshot::{
     ScreenshotOutputFormat, ScreenshotPayloadOptions,
 };
 use crate::terminal::{terminal_paste_shortcut, TerminalPasteShortcut};
+use crate::windowing::backends::niri::{self, NIRI_BACKEND};
 use crate::windowing::registry;
 use crate::windows::{
     focus_window_target, focused_window, list_windows, resolve_window_target,
@@ -322,11 +323,11 @@ impl ComputerUseLinux {
             .await;
         let (screenshot, screenshot_error) = if include_screenshot {
             let result: Result<ScreenshotCapture> = async {
-                let raw = capture_screenshot_raw().await?;
-                self.cache_desktop_size(raw.width, raw.height);
+                let (raw, target_crop) = self.capture_for_window(window_context.as_ref()).await?;
                 if let Some(window) = window_context.as_ref() {
                     ensure_readonly_screenshot_target_is_visible(window)?;
-                    let crop = self.window_crop_rect_for_capture(window, &raw).await?;
+                    let crop = target_crop
+                        .ok_or_else(|| anyhow::anyhow!("target-window crop is unavailable"))?;
                     prepare_app_state_screenshot(
                         raw,
                         Some(crop),
@@ -470,10 +471,10 @@ impl ComputerUseLinux {
             .as_ref()
             .and_then(|window| window.title.clone());
 
-        let raw_capture = capture_screenshot_raw()
+        let (raw_capture, target_crop) = self
+            .capture_for_window(crop_window)
             .await
             .map_err(|e| ErrorData::internal_error(format!("screenshot failed: {e}"), None))?;
-        self.cache_desktop_size(raw_capture.width, raw_capture.height);
 
         // Warn when the target window extends past the visible desktop: the
         // portal only captures on-screen pixels, so the crop silently loses the
@@ -484,16 +485,10 @@ impl ComputerUseLinux {
         };
 
         let (capture, cropped) = match crop_window {
-            Some(window) => {
-                let (x, y, width, height) = self
-                    .window_crop_rect_for_capture(window, &raw_capture)
-                    .await
-                    .map_err(|error| {
-                        ErrorData::internal_error(
-                            format!("targeted screenshot crop failed: {error:#}"),
-                            None,
-                        )
-                    })?;
+            Some(_) => {
+                let (x, y, width, height) = target_crop.ok_or_else(|| {
+                    ErrorData::internal_error("target-window crop is unavailable", None)
+                })?;
                 let (bytes, width, height) = crop_png(&raw_capture.bytes, x, y, width, height)
                     .map_err(|error| {
                         ErrorData::internal_error(
@@ -598,6 +593,7 @@ impl ComputerUseLinux {
         let received = Some(serde_json::json!(params.clone()));
         let mut input_guard = Arc::clone(&self.input_operation_lock).lock_owned().await;
         let mut portal_target_point = None;
+        let mut niri_input_geometry = None;
         // Raise the target window first (if specified) so the click lands on the
         // intended app rather than whatever is stacked on top at that pixel.
         let window_target = params.window_target();
@@ -661,6 +657,7 @@ impl ComputerUseLinux {
                         received,
                     });
                 }
+                niri_input_geometry = coordinate_map.niri_geometry.clone();
                 portal_target_point = params
                     .x
                     .zip(params.y)
@@ -735,6 +732,9 @@ impl ComputerUseLinux {
         // no visible pixel — surface that instead of a silent no-op.
         let off_screen_note = self.off_screen_note_for_point(x, y).await;
         if self.ensure_abs_pointer().await {
+            if let Err(error) = revalidate_niri_input(niri_input_geometry.as_ref()).await {
+                return Json(action_result("click", Err(error), received));
+            }
             let btn = crate::abs_pointer::PointerButton::from_name(params.button.as_deref());
             let count = params.click_count.unwrap_or(1).clamp(1, 10);
             let abs_pointer = Arc::clone(&self.abs_pointer);
@@ -804,11 +804,15 @@ impl ComputerUseLinux {
             };
             match portal_click(
                 &session,
-                portal_x,
-                portal_y,
+                (portal_x, portal_y),
                 PointerButton::from_name(params.button.as_deref()),
                 params.click_count.unwrap_or(1).clamp(1, 10),
                 InputOperationGuard::new(input_guard),
+                async {
+                    revalidate_niri_input(niri_input_geometry.as_ref())
+                        .await
+                        .map_err(anyhow::Error::msg)
+                },
             )
             .await
             {
@@ -846,11 +850,15 @@ impl ComputerUseLinux {
                     };
                     match portal_click(
                         &session,
-                        portal_x,
-                        portal_y,
+                        (portal_x, portal_y),
                         PointerButton::from_name(params.button.as_deref()),
                         params.click_count.unwrap_or(1).clamp(1, 10),
                         InputOperationGuard::new(input_guard),
+                        async {
+                            revalidate_niri_input(niri_input_geometry.as_ref())
+                                .await
+                                .map_err(anyhow::Error::msg)
+                        },
                     )
                     .await
                     {
@@ -895,6 +903,9 @@ impl ComputerUseLinux {
                     ));
                 }
             }
+        }
+        if let Err(error) = revalidate_niri_input(niri_input_geometry.as_ref()).await {
+            return Json(action_result("click", Err(error), received));
         }
         if self.should_prefer_xdotool_pointer() {
             if let Some(xdotool_args) = xdotool_pointer_click_args(
@@ -1045,6 +1056,7 @@ impl ComputerUseLinux {
         let received = Some(serde_json::json!(params.clone()));
         let input_guard = Arc::clone(&self.input_operation_lock).lock_owned().await;
         let mut portal_target_point = None;
+        let mut niri_input_geometry = None;
         let units = ((params.pages.unwrap_or(1.0).abs().max(0.1) * 5.0).round() as i32).max(1);
         // Raise/focus the target window first (parity with click) so wheel
         // events land on the intended app.
@@ -1096,6 +1108,7 @@ impl ComputerUseLinux {
                         });
                     }
                 };
+                niri_input_geometry = coordinate_map.niri_geometry.clone();
                 if let Err(message) = apply_window_relative_scroll_coordinates(
                     &mut params,
                     coordinate_map.capture_rect,
@@ -1139,6 +1152,7 @@ impl ComputerUseLinux {
                         });
                     }
                 };
+                niri_input_geometry = coordinate_map.niri_geometry.clone();
                 if let Err(message) =
                     apply_window_center_scroll_point(&mut params, coordinate_map.capture_rect)
                 {
@@ -1204,9 +1218,19 @@ impl ComputerUseLinux {
             };
             let session_for_input = session.clone();
             let (input_guard, result) = run_cancellation_safe_input(input_guard, async move {
-                portal_scroll(&session_for_input, portal_target_point, direction, units)
-                    .await
-                    .map_err(|error| format!("{error:#}"))
+                portal_scroll(
+                    &session_for_input,
+                    portal_target_point,
+                    direction,
+                    units,
+                    async {
+                        revalidate_niri_input(niri_input_geometry.as_ref())
+                            .await
+                            .map_err(anyhow::Error::msg)
+                    },
+                )
+                .await
+                .map_err(|error| format!("{error:#}"))
             })
             .await;
             let _input_guard = input_guard;
@@ -1253,9 +1277,19 @@ impl ComputerUseLinux {
                     let session_for_input = session.clone();
                     let (input_guard, result) =
                         run_cancellation_safe_input(input_guard, async move {
-                            portal_scroll(&session_for_input, portal_target_point, direction, units)
-                                .await
-                                .map_err(|error| format!("{error:#}"))
+                            portal_scroll(
+                                &session_for_input,
+                                portal_target_point,
+                                direction,
+                                units,
+                                async {
+                                    revalidate_niri_input(niri_input_geometry.as_ref())
+                                        .await
+                                        .map_err(anyhow::Error::msg)
+                                },
+                            )
+                            .await
+                            .map_err(|error| format!("{error:#}"))
                         })
                         .await;
                     let _input_guard = input_guard;
@@ -1325,6 +1359,9 @@ impl ComputerUseLinux {
             sequence.push(absolute_mousemove_args(x, y));
         }
         sequence.push(wheel_mousemove_args(dx, dy));
+        if let Err(error) = revalidate_niri_input(niri_input_geometry.as_ref()).await {
+            return Json(action_result("scroll", Err(error), received));
+        }
         let (input_guard, result) = run_cancellation_safe_input(input_guard, async move {
             run_ydotool_sequence(&sequence).await
         })
@@ -2811,13 +2848,31 @@ impl ComputerUseLinux {
         Ok(window)
     }
 
-    async fn window_crop_rect_for_capture(
+    async fn capture_for_window(
         &self,
-        window: &WindowInfo,
-        raw: &RawScreenshotCapture,
-    ) -> Result<(i32, i32, u32, u32)> {
-        self.window_crop_rect_for_dimensions(window, raw.width, raw.height)
-            .await
+        window: Option<&WindowInfo>,
+    ) -> Result<(RawScreenshotCapture, Option<(i32, i32, u32, u32)>)> {
+        let before = match window.filter(|w| w.backend == NIRI_BACKEND) {
+            Some(w) => Some(niri::window_geometry(w.window_id).await?),
+            None => None,
+        };
+        let raw = capture_screenshot_raw().await?;
+        self.cache_desktop_size(raw.width, raw.height);
+        let crop = match (window, before) {
+            (Some(w), Some(before)) => {
+                let after = niri::window_geometry(w.window_id).await?;
+                if before != after {
+                    anyhow::bail!("Niri window moved during capture; refusing a stale crop");
+                }
+                Some(niri_coordinate_map(&after, raw.width, raw.height)?.capture_rect)
+            }
+            (Some(w), None) => Some(
+                self.window_crop_rect_for_dimensions(w, raw.width, raw.height)
+                    .await?,
+            ),
+            (None, _) => None,
+        };
+        Ok((raw, crop))
     }
 
     async fn window_crop_rect_for_dimensions(
@@ -2838,6 +2893,10 @@ impl ComputerUseLinux {
         capture_width: u32,
         capture_height: u32,
     ) -> Result<WindowCoordinateMap> {
+        if window.backend == NIRI_BACKEND {
+            let geometry = niri::window_geometry(window.window_id).await?;
+            return niri_coordinate_map(&geometry, capture_width, capture_height);
+        }
         let bounds = window.bounds.as_ref().ok_or_else(|| {
             anyhow::anyhow!(
                 "targeted screenshot requires window bounds; refusing to return the full desktop"
@@ -2895,6 +2954,7 @@ impl ComputerUseLinux {
             capture_rect: clip_capture_rect(full_capture_rect, capture_width, capture_height)?,
             full_capture_rect,
             portal_rect,
+            niri_geometry: None,
         })
     }
 
@@ -2908,7 +2968,10 @@ impl ComputerUseLinux {
             .unwrap_or(&focus.requested_window);
         if !matches!(
             window.backend.as_str(),
-            GNOME_SHELL_EXTENSION_BACKEND | GNOME_SHELL_INTROSPECT_BACKEND | KWIN_BACKEND
+            GNOME_SHELL_EXTENSION_BACKEND
+                | GNOME_SHELL_INTROSPECT_BACKEND
+                | KWIN_BACKEND
+                | NIRI_BACKEND
         ) {
             let full_capture_rect = window
                 .bounds
@@ -2933,6 +2996,7 @@ impl ComputerUseLinux {
                 capture_rect,
                 full_capture_rect,
                 portal_rect: None,
+                niri_geometry: None,
             });
         }
         let (_, _, width, height) = self.capture_space_rect().await.ok_or_else(|| {
@@ -3955,11 +4019,12 @@ fn ensure_readonly_screenshot_target_is_visible(window: &WindowInfo) -> Result<(
     Ok(())
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct WindowCoordinateMap {
     capture_rect: (i32, i32, u32, u32),
     full_capture_rect: (i32, i32, u32, u32),
     portal_rect: Option<(i32, i32, u32, u32)>,
+    niri_geometry: Option<niri::NiriWindowGeometry>,
 }
 
 impl WindowCoordinateMap {
@@ -3971,6 +4036,28 @@ impl WindowCoordinateMap {
             map_coordinate_between_rects(capture_y, full_y, full_height, portal_y, portal_height),
         ))
     }
+}
+
+async fn revalidate_niri_input(
+    geometry: Option<&niri::NiriWindowGeometry>,
+) -> std::result::Result<(), String> {
+    if let Some(expected) = geometry {
+        let current = niri::window_geometry(expected.id)
+            .await
+            .map_err(|error| format!("Input cancelled: {error:#}"))?;
+        ensure_niri_input_unchanged(expected, &current)?;
+    }
+    Ok(())
+}
+
+fn ensure_niri_input_unchanged(
+    expected: &niri::NiriWindowGeometry,
+    current: &niri::NiriWindowGeometry,
+) -> std::result::Result<(), String> {
+    if expected != current {
+        return Err("Input cancelled: Niri window or output geometry changed while preparing input; capture the target again.".into());
+    }
+    Ok(())
 }
 
 fn map_coordinate_between_rects(
@@ -3987,6 +4074,61 @@ fn map_coordinate_between_rects(
 
 fn logical_window_crop_rect(
     bounds: &crate::windowing::WindowBounds,
+    monitors: &[(i32, i32, i32, i32)],
+    capture_width: u32,
+    capture_height: u32,
+) -> Result<(i32, i32, u32, u32)> {
+    logical_rect_crop(
+        f64::from(
+            bounds
+                .x
+                .ok_or_else(|| anyhow::anyhow!("window x is unavailable"))?,
+        ),
+        f64::from(
+            bounds
+                .y
+                .ok_or_else(|| anyhow::anyhow!("window y is unavailable"))?,
+        ),
+        bounds.width,
+        bounds.height,
+        monitors,
+        capture_width,
+        capture_height,
+    )
+}
+
+fn niri_coordinate_map(
+    geometry: &niri::NiriWindowGeometry,
+    capture_width: u32,
+    capture_height: u32,
+) -> Result<WindowCoordinateMap> {
+    let full_capture_rect = logical_rect_crop(
+        geometry.x,
+        geometry.y,
+        geometry.width,
+        geometry.height,
+        &geometry.outputs,
+        capture_width,
+        capture_height,
+    )?;
+    Ok(WindowCoordinateMap {
+        capture_rect: clip_capture_rect(full_capture_rect, capture_width, capture_height)?,
+        full_capture_rect,
+        niri_geometry: Some(geometry.clone()),
+        portal_rect: Some((
+            geometry.x.round() as i32,
+            geometry.y.round() as i32,
+            geometry.width,
+            geometry.height,
+        )),
+    })
+}
+
+fn logical_rect_crop(
+    x: f64,
+    y: f64,
+    width: u32,
+    height: u32,
     monitors: &[(i32, i32, i32, i32)],
     capture_width: u32,
     capture_height: u32,
@@ -4025,23 +4167,13 @@ fn logical_window_crop_rect(
         );
     }
 
-    let x = i64::from(
-        bounds
-            .x
-            .ok_or_else(|| anyhow::anyhow!("window x is unavailable"))?,
-    );
-    let y = i64::from(
-        bounds
-            .y
-            .ok_or_else(|| anyhow::anyhow!("window y is unavailable"))?,
-    );
-    if bounds.width == 0 || bounds.height == 0 {
+    if !x.is_finite() || !y.is_finite() || width == 0 || height == 0 {
         anyhow::bail!("window bounds are empty");
     }
-    let left = (((x - min_x) as f64) * scale_x).floor() as i64;
-    let top = (((y - min_y) as f64) * scale_y).floor() as i64;
-    let right = (((x + i64::from(bounds.width) - min_x) as f64) * scale_x).ceil() as i64;
-    let bottom = (((y + i64::from(bounds.height) - min_y) as f64) * scale_y).ceil() as i64;
+    let left = ((x - min_x as f64) * scale_x).floor() as i64;
+    let top = ((y - min_y as f64) * scale_y).floor() as i64;
+    let right = ((x + f64::from(width) - min_x as f64) * scale_x).ceil() as i64;
+    let bottom = ((y + f64::from(height) - min_y as f64) * scale_y).ceil() as i64;
     let width = u32::try_from(right - left)
         .map_err(|_| anyhow::anyhow!("scaled window width is invalid"))?;
     let height = u32::try_from(bottom - top)
@@ -5402,6 +5534,49 @@ fn looks_like_desktop_app(name: &str, command: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn changed_niri_snapshot_cancels_input_after_backend_preparation() {
+        let expected = niri::parse_window_geometry(
+            r#"{"id":18,"x":10,"y":20,"width":400,"height":300,"outputs":[[0,0,1920,1080]]}"#,
+            18,
+        )
+        .unwrap();
+        let mut current = expected.clone();
+        let mut dispatched = false;
+        // The asynchronous backend initialization gives the compositor/user a
+        // chance to move the window; validation must run after it finishes.
+        async {
+            tokio::task::yield_now().await;
+            current.x += 100.0;
+        }
+        .await;
+        let result = ensure_niri_input_unchanged(&expected, &current);
+        if result.is_ok() {
+            dispatched = true;
+        }
+        assert!(result.is_err());
+        assert!(!dispatched);
+        assert!(ensure_niri_input_unchanged(&expected, &expected).is_ok());
+        current = expected.clone();
+        current.outputs[0].2 += 100;
+        assert!(ensure_niri_input_unchanged(&expected, &current).is_err());
+    }
+    #[test]
+    fn niri_target_crop_and_relative_click_use_live_geometry_not_null_layout_bounds() {
+        let geometry = niri::parse_window_geometry(
+            r#"{"id":18,"x":10.4,"y":20,"width":400,"height":300,"outputs":[[0,0,1920,1080]]}"#,
+            18,
+        )
+        .unwrap();
+        let mapping = niri_coordinate_map(&geometry, 2400, 1350).unwrap();
+        assert_eq!(mapping.capture_rect, (13, 25, 500, 375));
+        let mut click: ClickParams =
+            serde_json::from_value(serde_json::json!({"x":100,"y":100,"relative":true})).unwrap();
+        apply_window_relative_click_coordinates(&mut click, mapping.capture_rect).unwrap();
+        assert_eq!((click.x, click.y), (Some(113), Some(125)));
+        assert_eq!(mapping.portal_point(113, 125), Some((90, 100)));
+        assert!(niri_coordinate_map(&geometry, 1920, 2160).is_err());
+    }
     use crate::atspi_tree::{AccessibilityAction, Bounds};
     use crate::windows::{WindowBounds, GNOME_SHELL_EXTENSION_BACKEND};
     use std::os::unix::fs::PermissionsExt;
@@ -5700,6 +5875,7 @@ mod tests {
     #[test]
     fn portal_points_map_capture_pixels_back_to_logical_window_space() {
         let scaled = WindowCoordinateMap {
+            niri_geometry: None,
             capture_rect: (8, 48, 1810, 1526),
             full_capture_rect: (8, 48, 1810, 1526),
             portal_rect: Some((6, 36, 1357, 1144)),
@@ -5707,6 +5883,7 @@ mod tests {
         assert_eq!(scaled.portal_point(913, 811), Some((684, 608)));
 
         let clipped = WindowCoordinateMap {
+            niri_geometry: None,
             capture_rect: (0, 0, 50, 60),
             full_capture_rect: (-50, -40, 100, 100),
             portal_rect: Some((-50, -40, 100, 100)),
@@ -5726,6 +5903,7 @@ mod tests {
         let full_capture_rect =
             logical_window_crop_rect(&bounds, &[(0, 0, 1920, 1080)], 3840, 2160).unwrap();
         let mapping = WindowCoordinateMap {
+            niri_geometry: None,
             capture_rect: full_capture_rect,
             full_capture_rect,
             portal_rect: Some(logical_rect),
@@ -5747,6 +5925,7 @@ mod tests {
         let full_capture_rect =
             logical_window_crop_rect(&bounds, &[(100, -50, 1920, 1080)], 3840, 2160).unwrap();
         let mapping = WindowCoordinateMap {
+            niri_geometry: None,
             capture_rect: full_capture_rect,
             full_capture_rect,
             portal_rect: Some(logical_rect),

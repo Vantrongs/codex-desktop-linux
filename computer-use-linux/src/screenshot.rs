@@ -145,7 +145,7 @@ impl ScreenshotPayloadOptions {
 
 /// Environment variable forcing a single capture backend, skipping the
 /// fallback chain. Accepts `gnome-shell`, `gnome-extension`, `portal`, or
-/// `gnome-screenshot`.
+/// `gnome-screenshot` or `grim`.
 const SCREENSHOT_BACKEND_ENV: &str = "CODEX_COMPUTER_USE_SCREENSHOT_BACKEND";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -154,6 +154,7 @@ enum ScreenshotBackend {
     GnomeExtension,
     Portal,
     GnomeScreenshot,
+    Grim,
 }
 
 impl ScreenshotBackend {
@@ -163,6 +164,7 @@ impl ScreenshotBackend {
             "gnome-extension" | "gnome_extension" | "extension" => Some(Self::GnomeExtension),
             "portal" | "xdg-portal" | "xdg_portal" => Some(Self::Portal),
             "gnome-screenshot" | "gnome_screenshot" => Some(Self::GnomeScreenshot),
+            "grim" => Some(Self::Grim),
             _ => None,
         }
     }
@@ -173,6 +175,7 @@ impl ScreenshotBackend {
             Self::GnomeExtension => capture_with_gnome_extension().await,
             Self::Portal => capture_with_portal().await,
             Self::GnomeScreenshot => capture_with_gnome_screenshot().await,
+            Self::Grim => capture_with_grim().await,
         }
     }
 }
@@ -185,6 +188,12 @@ pub async fn capture_screenshot_raw() -> Result<RawScreenshotCapture> {
     // blocked, and aids debugging.
     if let Some(forced) = forced_backend()? {
         return forced.capture().await;
+    }
+
+    // Niri implements wlr-screencopy. Select its native capture transport, not
+    // the GNOME/portal error-recovery chain. Never fall back after a grim error.
+    if crate::diagnostics::is_niri_desktop(std::env::var("XDG_CURRENT_DESKTOP").ok().as_deref()) {
+        return capture_with_grim().await;
     }
 
     // The Shell and portal DBus paths fail for background processes (systemd
@@ -224,7 +233,7 @@ fn forced_backend() -> Result<Option<ScreenshotBackend>> {
             ScreenshotBackend::parse(&value).map(Some).ok_or_else(|| {
                 anyhow!(
                     "{SCREENSHOT_BACKEND_ENV}={value:?} is not a recognized backend \
-                     (expected gnome-shell, gnome-extension, portal, or gnome-screenshot)"
+                     (expected gnome-shell, gnome-extension, portal, gnome-screenshot, or grim)"
                 )
             })
         }
@@ -289,6 +298,38 @@ pub fn prepare_screenshot_payload(
         max_bytes: options.max_bytes,
         format: options.format,
         quality: (options.format == ScreenshotOutputFormat::Jpeg).then_some(options.quality),
+    })
+}
+
+async fn capture_with_grim() -> Result<RawScreenshotCapture> {
+    let mut command = Command::new("grim");
+    command.args(["-t", "png", "-"]);
+    capture_grim_command(command).await
+}
+
+async fn capture_grim_command(command: Command) -> Result<RawScreenshotCapture> {
+    // A detailed 4K PNG can exceed the 8 MiB IPC-command budget before resizing.
+    // Keep capture bounded, with room for multi-monitor and high-DPI desktops.
+    let output = crate::command_runner::output_with_stdout_limit(
+        command,
+        "capture Niri desktop with grim",
+        Duration::from_secs(15),
+        128 * 1024 * 1024,
+    )
+    .await?;
+    if !output.status.success() {
+        bail!(
+            "grim capture failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    let (width, height) = png_dimensions(&output.stdout)?;
+    Ok(RawScreenshotCapture {
+        mime_type: "image/png".into(),
+        bytes: output.stdout,
+        source: "grim".into(),
+        width,
+        height,
     })
 }
 
@@ -737,6 +778,36 @@ mod tests {
         encode_test_png(img)
     }
 
+    #[tokio::test]
+    async fn grim_accepts_large_slow_png_then_resizes_payload() {
+        let mut seed = 17_u32;
+        let mut img = image::RgbaImage::new(1800, 1800);
+        for byte in img.as_mut() {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            *byte = seed as u8;
+        }
+        let png = encode_test_png(img);
+        assert!(png.len() > 8 * 1024 * 1024);
+        let file = test_path("large-grim");
+        fs::write(&file, &png).unwrap();
+        let mut command = Command::new("sh");
+        command
+            .args(["-c", "sleep 2.1; cat -- \"$1\"", "grim-test"])
+            .arg(&file);
+        let raw = capture_grim_command(command).await;
+        fs::remove_file(file).unwrap();
+        let raw = raw.unwrap();
+        assert_eq!(raw.bytes, png);
+        let payload = prepare_screenshot_payload(raw, ScreenshotPayloadOptions::default()).unwrap();
+        assert!(payload.bytes <= DEFAULT_SCREENSHOT_MAX_BYTES);
+        assert_eq!(
+            (payload.coordinate_width, payload.coordinate_height),
+            (1800, 1800)
+        );
+    }
+
     fn noisy_png(width: u32, height: u32) -> Vec<u8> {
         let mut img = image::RgbaImage::new(width, height);
         for (x, y, pixel) in img.enumerate_pixels_mut() {
@@ -777,6 +848,10 @@ mod tests {
 
     #[test]
     fn parses_known_backend_names() {
+        assert_eq!(
+            ScreenshotBackend::parse("grim"),
+            Some(ScreenshotBackend::Grim)
+        );
         assert_eq!(
             ScreenshotBackend::parse("gnome-shell"),
             Some(ScreenshotBackend::GnomeShell)

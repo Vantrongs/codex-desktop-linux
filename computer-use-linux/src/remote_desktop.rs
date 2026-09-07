@@ -554,17 +554,18 @@ pub fn keysyms_for_text(text: &str) -> Result<Vec<i32>> {
 
 pub(crate) async fn click(
     session: &PortalPointerSession,
-    x: i32,
-    y: i32,
+    point: (i32, i32),
     button: PointerButton,
     click_count: u32,
     operation_guard: InputOperationGuard,
+    preflight: impl std::future::Future<Output = Result<()>>,
 ) -> Result<()> {
     let input_guard = Arc::clone(&session.input_lock).lock_owned().await;
     session.ensure_current_layout().await?;
     let proxy = remote_desktop_proxy(&session.connection).await?;
+    preflight.await?;
     let mut release_guard = PointerReleaseGuard::new(session, input_guard, operation_guard);
-    let (stream_id, x, y) = session.map_absolute_point(x, y)?;
+    let (stream_id, x, y) = session.map_absolute_point(point.0, point.1)?;
     notify_pointer_motion_absolute(&proxy, &session.session_handle, stream_id, x, y).await?;
     for _ in 0..click_count.max(1) {
         release_guard.arm(button.evdev_code());
@@ -593,6 +594,7 @@ pub async fn scroll(
     target_point: Option<(i32, i32)>,
     direction: ScrollDirection,
     steps: i32,
+    preflight: impl std::future::Future<Output = Result<()>>,
 ) -> Result<()> {
     let _input_guard = Arc::clone(&session.input_lock).lock_owned().await;
     if target_point.is_some() {
@@ -601,6 +603,7 @@ pub async fn scroll(
         session.ensure_valid()?;
     }
     let proxy = remote_desktop_proxy(&session.connection).await?;
+    preflight.await?;
     if let Some((x, y)) = target_point {
         let (stream_id, x, y) = session.map_absolute_point(x, y)?;
         notify_pointer_motion_absolute(&proxy, &session.session_handle, stream_id, x, y).await?;

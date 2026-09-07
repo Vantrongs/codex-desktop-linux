@@ -9,6 +9,72 @@ use tokio::process::Command;
 
 pub const NIRI_BACKEND: &str = "niri";
 
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub(crate) struct NiriWindowGeometry {
+    pub id: u64,
+    pub x: f64,
+    pub y: f64,
+    pub width: u32,
+    pub height: u32,
+    pub outputs: Vec<(i32, i32, i32, i32)>,
+}
+
+pub(crate) async fn window_geometry(window_id: u64) -> Result<NiriWindowGeometry> {
+    let output = niri_output_async(&[
+        "msg",
+        "--json",
+        "window-geometry",
+        "--id",
+        &window_id.to_string(),
+    ])
+    .await?;
+    if !output.status.success() {
+        bail!(
+            "Niri live window geometry unavailable: {}",
+            command_failure_detail(&output)
+        );
+    }
+    parse_window_geometry(&String::from_utf8_lossy(&output.stdout), window_id)
+}
+
+pub(crate) fn parse_window_geometry(json: &str, window_id: u64) -> Result<NiriWindowGeometry> {
+    let geometry: NiriWindowGeometry =
+        serde_json::from_str(json).context("invalid Niri window geometry response")?;
+    if geometry.id != window_id
+        || !geometry.x.is_finite()
+        || !geometry.y.is_finite()
+        || geometry.x < f64::from(i32::MIN)
+        || geometry.x > f64::from(i32::MAX)
+        || geometry.y < f64::from(i32::MIN)
+        || geometry.y > f64::from(i32::MAX)
+        || geometry.width > i32::MAX as u32
+        || geometry.height > i32::MAX as u32
+        || geometry.width == 0
+        || geometry.height == 0
+        || geometry.outputs.is_empty()
+        || geometry.outputs.iter().any(|r| r.2 <= 0 || r.3 <= 0)
+    {
+        bail!("Niri returned mismatched or invalid target-window geometry");
+    }
+    Ok(geometry)
+}
+
+#[cfg(test)]
+mod geometry_tests {
+    use super::*;
+
+    #[test]
+    fn niri_geometry_requires_exact_target_and_complete_snapshot() {
+        let json =
+            r#"{"id":18,"x":10.4,"y":20,"width":938,"height":1028,"outputs":[[0,0,1920,1080]]}"#;
+        assert_eq!(parse_window_geometry(json, 18).unwrap().x, 10.4);
+        assert!(parse_window_geometry(json, 3).is_err());
+        assert!(parse_window_geometry(&json.replace("938", "0"), 18).is_err());
+        assert!(parse_window_geometry(&json.replace("[[0,0,1920,1080]]", "[]"), 18).is_err());
+        assert!(parse_window_geometry("null", 18).is_err());
+    }
+}
+
 pub fn probe() -> BackendProbe {
     match niri_output(&["msg", "--json", "windows"]) {
         Ok(output) if output.status.success() => {

@@ -36,6 +36,13 @@ Native control retains OS permission requirements and target-window focus
 checks. Consequential-action approval remains the host/model's responsibility;
 Linux does not provide saved per-app approvals through this integration.
 
+On Niri, targeted screenshots and coordinate input require the paired fork's
+on-demand `window-geometry` IPC request and a restarted compositor. `grim`
+provides capture; geometry is checked before and after it. Missing geometry,
+layout transitions, overlays, or incompatible capture scaling are errors, not full-screen
+fallbacks. See the guide above for activation and dependencies.
+Relative input also revalidates placement/focus after backend setup, before dispatch.
+
 ## Implementation and validation
 
 The adapter and native helpers are packaged together inside the upstream
