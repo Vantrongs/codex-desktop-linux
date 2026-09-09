@@ -308,6 +308,7 @@ exit 7
       ...process.env,
       CODEX_HOME: codexHome,
       CODEX_OZONE_PLATFORM: "x11",
+      NIXOS_OZONE_WL: "",
       CODEX_LINUX_DISABLE_USAGE_REPORTING: "1",
       CODEX_MCP_HELPER_REAPER_DISABLE: "0",
       CODEX_MCP_HELPER_REAPER_DISABLE_HOOK: "0",
