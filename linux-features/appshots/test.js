@@ -18,6 +18,7 @@ const {
   applyLinuxAppshotHotkeyPatch,
   applyLinuxAppshotMainProcessPatch,
   descriptors,
+  matchesLinuxAppshotAvailabilityContract,
 } = require("./patch.js");
 
 function applyPatchTwice(patchFn, source) {
@@ -40,7 +41,7 @@ function captureWarnings(callback) {
 }
 
 function appshotAvailabilityAtomBundleFixture() {
-  return "function Zmr(e,t){return e===`macOS`||e===`windows`&&t!=null&&mu.isInternal(t)};let appshot=Zmr(platform,flavor)";
+  return "async function q1o({scope:e,hostId:t,queryClient:n}){return(await n.ensureQueryData({queryKey:Adn({hostId:t}),queryFn:()=>Mdn(e,t)})).requirements?.allowAppshots!==!1}function J1o(e){return e===`macOS`||e===`windows`}";
 }
 
 function appshotMainProcessBundleFixture() {
@@ -304,7 +305,8 @@ test("enables AppShots availability atom on Linux", () => {
     patched,
     /e===`linux`\/\*codexLinuxAppshotsPlatformAvailable\*\/\|\|e===`macOS`/,
   );
-  assert.match(patched, /e===`windows`&&t!=null&&mu\.isInternal\(t\)/);
+  assert.match(patched, /e===`windows`/);
+  assert.equal(matchesLinuxAppshotAvailabilityContract(patched), true);
 });
 
 test("rejects the obsolete raw renderer message sender shape", () => {
