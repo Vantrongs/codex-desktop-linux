@@ -48,6 +48,9 @@ Relative input also revalidates placement/focus after backend setup, before disp
 The adapter and native helpers are packaged together inside the upstream
 `unified-computer-use` plugin. The separate `computer-use` component stores the
 Any App setting and exposes no MCP tools. Upstream owns browser control.
+The selected native surface initializes through the Linux adapter after the
+upstream browser API is ready. Its incompatible Sky setup RPC is disabled in
+the bundled CUA initializer; browser-only sessions retain upstream initialization.
 Missing or ambiguous bundle contracts abort an enabled build.
 
 `make install-native` builds `codex-computer-use-linux` and

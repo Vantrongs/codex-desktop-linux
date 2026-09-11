@@ -8,6 +8,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
+const { writeUnifiedComputerUseFixture } = require("../../tests/fixtures/linux-features/unified-computer-use.js");
 
 const manifest = require("./feature.json");
 const descriptors = require("./patch.js");
@@ -48,48 +49,52 @@ test("staging extends the hidden unified plugin and invalidates the browser-only
   fs.mkdirSync(path.dirname(marketplacePath), { recursive: true });
   const marketplace = JSON.stringify({ plugins: [{ name: "unified-computer-use" }, { name: "browser" }] });
   fs.writeFileSync(marketplacePath, marketplace);
-  fs.mkdirSync(path.join(target, "scripts"), { recursive: true });
-  fs.mkdirSync(path.join(target, ".codex-plugin"));
-  fs.writeFileSync(path.join(target, ".codex-plugin/plugin.json"), JSON.stringify({ name: "unified-computer-use", version: "26.901.41600" }));
-  fs.writeFileSync(path.join(target, "scripts/launch.mjs"), 'const surfaces = new Set(["browser", "computer"]); const setupOptions = {browser: surfaces.has("browser"), computer: surfaces.has("computer")}; const env = {NODE_REPL_TRUSTED_SERVICES: JSON.stringify({sky:"@oai/sky/service"}),NODE_REPL_JS_BANNER: banner,};');
+  const { globalsPath, originalGlobals } = writeUnifiedComputerUseFixture(installDir);
   const backend = path.join(workspace, "backend");
   fs.writeFileSync(backend, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
   const env = { ...process.env, SCRIPT_DIR: path.resolve(__dirname, "../.."), INSTALL_DIR: installDir,
     CODEX_COMPUTER_USE_BINARY_SOURCE: backend, CODEX_COMPUTER_USE_COSMIC_BINARY_SOURCE: backend };
   const stage = () => execFileSync("bash", [path.join(__dirname, "stage.sh")], { env, stdio: "pipe" });
-  const launcherPath = path.join(target, "scripts/launch.mjs");
-  const originalLauncher = fs.readFileSync(launcherPath, "utf8");
+  const mcpPath = path.join(target, ".mcp.json");
+  const originalMcp = fs.readFileSync(mcpPath, "utf8");
   const originalManifest = fs.readFileSync(path.join(target, ".codex-plugin/plugin.json"), "utf8");
   for (const invalid of [
-    originalLauncher.replaceAll("setupOptions", "selectedSurfaces"),
-    originalLauncher.replace(/const setupOptions = \{[^}]+\}; /, ""),
-    originalLauncher.replace('computer: surfaces.has("computer")', 'computer: surfaces.has("browser")'),
+    originalMcp.replace('"command":"node"', '"command":"changed"'),
+    originalMcp.replace('"args":[]', '"args":["changed"]'),
+    originalMcp.replace('"enabled":false', '"enabled":true'),
   ]) {
-    fs.writeFileSync(launcherPath, invalid);
+    fs.writeFileSync(mcpPath, invalid);
     assert.throws(stage, /unified.*contract/i);
-    assert.equal(fs.readFileSync(launcherPath, "utf8"), invalid);
+    assert.equal(fs.readFileSync(mcpPath, "utf8"), invalid);
     assert.equal(fs.readFileSync(path.join(target, ".codex-plugin/plugin.json"), "utf8"), originalManifest);
     assert.equal(fs.readFileSync(marketplacePath, "utf8"), marketplace);
+    assert.equal(fs.existsSync(path.join(target, "scripts/native-client.mjs")), false);
     assert.equal(fs.existsSync(path.join(target, "scripts/native-service.mjs")), false);
   }
-  fs.writeFileSync(launcherPath, originalLauncher);
+  fs.writeFileSync(mcpPath, originalMcp);
   for (const malformed of ['{"plugins":[', '{"plugins":{}}']) {
     fs.writeFileSync(marketplacePath, malformed);
     assert.throws(stage, /unified.*contract/i);
     assert.equal(fs.readFileSync(marketplacePath, "utf8"), malformed);
-    assert.equal(fs.readFileSync(launcherPath, "utf8"), originalLauncher);
+    assert.equal(fs.readFileSync(mcpPath, "utf8"), originalMcp);
     assert.equal(fs.readFileSync(path.join(target, ".codex-plugin/plugin.json"), "utf8"), originalManifest);
     assert.equal(fs.existsSync(path.join(target, "scripts/native-service.mjs")), false);
   }
   fs.writeFileSync(marketplacePath, marketplace);
+  fs.writeFileSync(globalsPath, originalGlobals.replace('computer:surfaces', 'computer:other'));
+  assert.throws(stage, /runtime.*contract/i);
+  assert.equal(fs.readFileSync(path.join(target, ".codex-plugin/plugin.json"), "utf8"), originalManifest);
+  fs.writeFileSync(globalsPath, originalGlobals);
   stage();
   const version = JSON.parse(fs.readFileSync(path.join(target, ".codex-plugin/plugin.json"))).version;
-  assert.equal(version, "26.901.41600-linux-native.3");
+  assert.equal(version, "26.908.31748-linux-native.4");
+  assert.match(fs.readFileSync(globalsPath, "utf8"), /computer:\/\*codexLinuxOwnsNativeCua\*\/!1/u);
   assert.deepEqual(JSON.parse(fs.readFileSync(marketplacePath)).plugins.map(p => p.name), ["unified-computer-use", "browser", "computer-use"]);
   const settingsManifest = JSON.parse(fs.readFileSync(path.join(target, "../computer-use/.codex-plugin/plugin.json")));
   assert.equal(settingsManifest.mcpServers, undefined);
   assert.equal(fs.existsSync(path.join(target, "../computer-use/.mcp.json")), false);
   assert.equal(fs.existsSync(path.join(target, "../computer-use/bin/codex-computer-use-linux")), false);
+  assert.equal(fs.existsSync(path.join(target, "scripts/native-client.mjs")), true);
   assert.equal(fs.existsSync(path.join(target, "scripts/native-service.mjs")), true);
   assert.equal(fs.readFileSync(path.join(target, "bin/codex-computer-use-linux"), "utf8"), fs.readFileSync(backend, "utf8"));
   const legacyMcp = path.join(target, "../computer-use/.mcp.json");
@@ -99,13 +104,13 @@ test("staging extends the hidden unified plugin and invalidates the browser-only
   assert.equal(JSON.parse(fs.readFileSync(path.join(target, ".codex-plugin/plugin.json"))).version, version);
   const manifestPath = path.join(target, ".codex-plugin/plugin.json");
   const previousManifest = JSON.parse(fs.readFileSync(manifestPath));
-  previousManifest.version = "26.901.41600-linux-native.2";
+  previousManifest.version = "26.901.41600-linux-native.1";
   fs.writeFileSync(manifestPath, JSON.stringify(previousManifest));
   stage();
-  assert.equal(JSON.parse(fs.readFileSync(manifestPath)).version, version);
+  assert.equal(JSON.parse(fs.readFileSync(manifestPath)).version, "26.901.41600-linux-native.4");
   stage();
-  assert.equal(JSON.parse(fs.readFileSync(manifestPath)).version, version);
-  fs.writeFileSync(path.join(target, "scripts/launch.mjs"), "upstream drift");
+  assert.equal(JSON.parse(fs.readFileSync(manifestPath)).version, "26.901.41600-linux-native.4");
+  fs.writeFileSync(mcpPath, "upstream drift");
   assert.throws(stage, /unified.*contract/i);
 });
 

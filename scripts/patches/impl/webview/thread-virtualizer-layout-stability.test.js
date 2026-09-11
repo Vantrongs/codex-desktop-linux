@@ -133,7 +133,7 @@ test("thread virtualizer descriptor upgrades the previous patch atomically", () 
   const extractedDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-thread-upgrade-"));
   try {
     const assetsDir = path.join(extractedDir, "webview", "assets");
-    const assetPath = path.join(assetsDir, "open-sources-side-panel-tab-previous.js");
+    const assetPath = path.join(assetsDir, "local-conversation-thread-previous.js");
     fs.mkdirSync(assetsDir, { recursive: true });
     fs.writeFileSync(
       assetPath,
@@ -210,9 +210,9 @@ test("thread virtualizer layout descriptor selects one semantic asset", () => {
   try {
     const assetsDir = path.join(extractedDir, "webview", "assets");
     fs.mkdirSync(assetsDir, { recursive: true });
-    fs.writeFileSync(path.join(assetsDir, "open-sources-side-panel-tab-fixture.js"), fixture());
+    fs.writeFileSync(path.join(assetsDir, "local-conversation-thread-fixture.js"), fixture());
     fs.writeFileSync(
-      path.join(assetsDir, "open-sources-side-panel-tab-decoy.js"),
+      path.join(assetsDir, "local-conversation-thread-decoy.js"),
       fixture().replace("q(t),n&&ae()", "x(t),n&&ae()"),
     );
     const shadowedDecoy = fixture().replace(
@@ -220,7 +220,7 @@ test("thread virtualizer layout descriptor selects one semantic asset", () => {
       "let{update:q}=helpers;q(t),n&&ae()",
     );
     fs.writeFileSync(
-      path.join(assetsDir, "open-sources-side-panel-tab-shadowed.js"),
+      path.join(assetsDir, "local-conversation-thread-shadowed.js"),
       shadowedDecoy,
     );
     const report = createPatchReport();
@@ -233,25 +233,25 @@ test("thread virtualizer layout descriptor selects one semantic asset", () => {
     );
 
     const patched = fs.readFileSync(
-      path.join(assetsDir, "open-sources-side-panel-tab-fixture.js"),
+      path.join(assetsDir, "local-conversation-thread-fixture.js"),
       "utf8",
     );
     assert.match(patched, new RegExp(THREAD_VIRTUALIZER_LAYOUT_MARKER, "u"));
     assert.equal(report.patches[0]?.status, "applied");
     assert.equal(
       report.patches[0]?.assetName,
-      "open-sources-side-panel-tab-fixture.js",
+      "local-conversation-thread-fixture.js",
     );
     assert.doesNotMatch(
       fs.readFileSync(
-        path.join(assetsDir, "open-sources-side-panel-tab-decoy.js"),
+        path.join(assetsDir, "local-conversation-thread-decoy.js"),
         "utf8",
       ),
       new RegExp(THREAD_VIRTUALIZER_LAYOUT_MARKER, "u"),
     );
     assert.equal(
       fs.readFileSync(
-        path.join(assetsDir, "open-sources-side-panel-tab-shadowed.js"),
+        path.join(assetsDir, "local-conversation-thread-shadowed.js"),
         "utf8",
       ),
       shadowedDecoy,
@@ -261,11 +261,11 @@ test("thread virtualizer layout descriptor selects one semantic asset", () => {
   }
 });
 
-test("thread virtualizer layout descriptor accepts the current conversation source asset", () => {
+test("thread virtualizer layout descriptor accepts the current local conversation asset", () => {
   const extractedDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-thread-source-"));
   try {
     const assetsDir = path.join(extractedDir, "webview", "assets");
-    const assetPath = path.join(assetsDir, "conversation-source-current.js");
+    const assetPath = path.join(assetsDir, "local-conversation-thread-current.js");
     fs.mkdirSync(assetsDir, { recursive: true });
     fs.writeFileSync(assetPath, fixture());
     const report = createPatchReport();
@@ -278,7 +278,7 @@ test("thread virtualizer layout descriptor accepts the current conversation sour
     );
 
     assert.equal(report.patches[0]?.status, "applied");
-    assert.equal(report.patches[0]?.assetName, "conversation-source-current.js");
+    assert.equal(report.patches[0]?.assetName, "local-conversation-thread-current.js");
     assert.match(
       fs.readFileSync(assetPath, "utf8"),
       new RegExp(THREAD_VIRTUALIZER_LAYOUT_MARKER, "u"),
@@ -288,7 +288,7 @@ test("thread virtualizer layout descriptor accepts the current conversation sour
   }
 });
 
-test("thread virtualizer layout descriptor accepts the current virtualized turn list asset", () => {
+test("thread virtualizer layout descriptor rejects the retired virtualized turn list asset", () => {
   const extractedDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-thread-list-"));
   try {
     const assetsDir = path.join(extractedDir, "webview", "assets");
@@ -304,12 +304,8 @@ test("thread virtualizer layout descriptor accepts the current virtualized turn 
       report,
     );
 
-    assert.equal(report.patches[0]?.status, "applied");
-    assert.equal(report.patches[0]?.assetName, "virtualized-turn-list-current.js");
-    assert.match(
-      fs.readFileSync(assetPath, "utf8"),
-      new RegExp(THREAD_VIRTUALIZER_LAYOUT_MARKER, "u"),
-    );
+    assert.equal(report.patches[0]?.status, "failed-required");
+    assert.equal(fs.readFileSync(assetPath, "utf8"), fixture());
   } finally {
     fs.rmSync(extractedDir, { force: true, recursive: true });
   }

@@ -13,7 +13,7 @@ const {
 
 function fixture() {
   return [
-    "var ttl,retry,max,Evictor,init=module(()=>{ttl=3600*1e3,retry=15e3,max=4,",
+    "var ttl,retry,max,Evictor,init=module(()=>{ttl=10800*1e3,retry=15e3,max=10,",
     "Evictor=class{params;inactiveOwnerConversationSinceById=new Map;",
     "shouldKeepConversationLoaded(e){return e.threadRuntimeStatus?.type===`active`||",
     "e.turn?.status===`inProgress`} getNextCheckAtMs(e){let i=e,n=e;",
@@ -84,7 +84,8 @@ test("inactive owner threads release renderer history after thirty minutes", () 
     patched,
     /void`codexLinuxInactiveThreadRetentionThirtyMinutes`,ttl=30\*60\*1e3/u,
   );
-  assert.doesNotMatch(patched, /ttl=3600\*1e3/u);
+  assert.doesNotMatch(patched, /ttl=10800\*1e3/u);
+  assert.match(patched, /retry=15e3,max=10/u);
   assert.match(patched, /threadRuntimeStatus\?\.type===`active`/u);
   assert.match(patched, /thread\/unsubscribe/u);
 });
@@ -210,7 +211,7 @@ test("retention patch rejects marker-only and damaged timeout output", () => {
 });
 
 test(
-  "current upstream bundle retains inactive owner threads for one hour",
+  "current upstream bundle retains inactive owner threads for three hours",
   { skip: process.env.CODEX_WEBVIEW_ASSET == null },
   () => {
     const source = fs.readFileSync(process.env.CODEX_WEBVIEW_ASSET, "utf8");
@@ -233,8 +234,8 @@ test(
     const wrongCleanupTarget = replaceAfter(
       patched,
       INACTIVE_THREAD_RETENTION_MARKER,
-      "updateConversationState(e,e=>{i&&(lv(e,[],!1)",
-      "updateConversationState(n,e=>{i&&(lv(e,[],!1)",
+      "updateConversationState(e,e=>{i&&(",
+      "updateConversationState(n,e=>{i&&(",
     );
     const wrongKeepState = replaceAfter(
       patched,

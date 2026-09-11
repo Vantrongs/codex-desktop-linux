@@ -15,8 +15,7 @@ const {
   isThreadVirtualizerLayoutAsset,
 } = require("../../scripts/patches/impl/webview/thread-virtualizer-layout-stability.js");
 const {
-  THREAD_HISTORY_PAGINATION_MARKER,
-  applyLinuxThreadHistoryPaginationPatch,
+  verifyLinuxThreadHistoryPagination,
   isThreadHistoryPaginationAsset,
 } = require("../../scripts/patches/impl/webview/thread-history-pagination.js");
 const {
@@ -95,7 +94,7 @@ module.exports = [
     order: 20_140,
     ciPolicy: CI_POLICY_REQUIRED_UPSTREAM,
     pattern:
-      /^(?:conversation-source|open-sources-side-panel-tab|virtualized-turn-list)-[^.]+\.js$/,
+      /^local-conversation-thread-[^.]+\.js$/,
     assetMatch: isThreadVirtualizerLayoutAsset,
     missingDescription: "thread virtualizer webview bundle",
     skipDescription: "Linux thread virtualizer layout stability patch",
@@ -110,8 +109,7 @@ module.exports = [
     assetMatch: isThreadHistoryPaginationAsset,
     missingDescription: "thread resume history pagination webview bundle",
     skipDescription: "Linux thread history server pagination patch",
-    requiredMarkers: [THREAD_HISTORY_PAGINATION_MARKER],
-    apply: applyLinuxThreadHistoryPaginationPatch,
+    apply: verifyLinuxThreadHistoryPagination,
   }),
   webviewAssetPatch({
     id: "linux-thread-navigation-history-index",

@@ -288,6 +288,18 @@ test("patches the 26.831 plugin detail action and refresh layout", () => {
   assert.match(patched, /requestClient:I\(y,W\)/u);
 });
 
+test("plugin detail keeps its refetch binding when upstream inserts template data", () => {
+  const source = currentOfficialLinux2631PluginDetailFixture().replace(
+    "plugin:K,refetch:tn",
+    "plugin:K,serviceAppTemplates:Jt,refetch:tn",
+  );
+  const patched = applyPluginUpdateButtonPatch(source);
+  assert.equal(hasInstalledPluginUpdateButton(patched), true);
+  assert.match(patched, /onUpdated:On/u);
+  assert.match(patched, /plugin:K,serviceAppTemplates:Jt,refetch:tn/u);
+  assert.equal(applyPluginUpdateButtonPatch(patched), patched);
+});
+
 test("composes the update button with an existing plugin share action", () => {
   const source = currentPluginDetailFixture().replace("shareActions:null", "shareActions:Ga");
   const patched = applyPluginUpdateButtonPatch(source);

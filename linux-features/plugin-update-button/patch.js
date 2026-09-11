@@ -148,7 +148,9 @@ function findLegacyPluginDetailBinding(source) {
   const bridgeMatch = source.match(
     new RegExp("await (" + JS_IDENT + ")\\(`read-plugin`,"),
   );
-  const pluginMatch = block.match(new RegExp(`plugin:(${JS_IDENT}),refetch:(${JS_IDENT})`));
+  const pluginMatch = block.match(new RegExp(
+    `plugin:(${JS_IDENT}),(?:${JS_IDENT}:${JS_IDENT},)*refetch:(${JS_IDENT})`,
+  ));
   const busyMatch = block.match(
     new RegExp(`isUninstalling:(${JS_IDENT}),isUpdatingEnabled:(${JS_IDENT}),shareActions:null`),
   );
@@ -244,7 +246,9 @@ function findReactCompiledPluginDetailBinding(source) {
   const bridgeMatch = source.match(
     new RegExp("await (" + JS_IDENT + ")\\(`read-plugin`,"),
   );
-  const pluginMatch = block.match(new RegExp(`plugin:(${JS_IDENT}),refetch:(${JS_IDENT})`));
+  const pluginMatch = block.match(new RegExp(
+    `plugin:(${JS_IDENT}),(?:${JS_IDENT}:${JS_IDENT},)*refetch:(${JS_IDENT})`,
+  ));
   const requestFactoryMatch = source.match(
     new RegExp(
       `(${JS_IDENT})\\((${JS_IDENT}),(${JS_IDENT})\\)\\.sendRequest\\(` +

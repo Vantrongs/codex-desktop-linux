@@ -6,8 +6,10 @@ thread virtualizer resize work, long-thread resume hydration, or persisted
 subagent runtime projection regress. Enable only after a measured problem or
 after the corresponding unsafe official-bundle contract is verified.
 
-The long-thread patch keeps resume hydration paginated whenever the connected
+Official 26.908 keeps resume hydration paginated whenever the connected
 app-server reports pagination support; older turns remain available on demand.
+The feature verifies this native contract without rewriting the retired remote
+flag gate.
 The existing paginated resume contract retains only the five newest turns in
 renderer memory initially and loads older turns in five-turn pages. Pages that
 were loaded while browsing are cleared when the inactive thread is unsubscribed.

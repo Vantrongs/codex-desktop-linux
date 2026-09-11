@@ -5,9 +5,9 @@ const INACTIVE_THREAD_RETENTION_MARKER =
 const IDENTIFIER = "[A-Za-z_$][\\w$]*";
 
 const UPSTREAM_RETENTION_PATTERN = new RegExp(
-  `(${IDENTIFIER})=3600\\*1e3,` +
+  `(${IDENTIFIER})=10800\\*1e3,` +
     `(${IDENTIFIER})=15e3,` +
-    `(${IDENTIFIER})=4,` +
+    `(${IDENTIFIER})=10,` +
     `(${IDENTIFIER})=class\\{params;inactiveOwnerConversationSinceById=new Map`,
   "gu",
 );
@@ -18,7 +18,7 @@ const INSTALLED_RETENTION_PATTERN = new RegExp(
     "`" +
     `,(${IDENTIFIER})=30\\*60\\*1e3,` +
     `(${IDENTIFIER})=15e3,` +
-    `(${IDENTIFIER})=4,` +
+    `(${IDENTIFIER})=10,` +
     `(${IDENTIFIER})=class\\{params;inactiveOwnerConversationSinceById=new Map`,
   "gu",
 );
@@ -164,7 +164,7 @@ function applyLinuxInactiveThreadRetentionPatch(source) {
   const match = upstream[0];
   const replacement =
     `void\`${INACTIVE_THREAD_RETENTION_MARKER}\`,` +
-    `${match[1]}=30*60*1e3,${match[2]}=15e3,${match[3]}=4,` +
+    `${match[1]}=30*60*1e3,${match[2]}=15e3,${match[3]}=10,` +
     `${match[4]}=class{params;inactiveOwnerConversationSinceById=new Map`;
   return (
     source.slice(0, match.index) +
