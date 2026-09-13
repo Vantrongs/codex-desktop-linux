@@ -53,3 +53,18 @@ not the active tree or the updater's recorded rollback artifact.
 Package manager output under `/opt/codex-desktop` is installed state, not a
 development source tree. Fix templates in the repository, rebuild a package,
 and reinstall rather than modifying `/opt` in place.
+
+The official 26.908.31748 webview can fail during startup with
+`TypeError: n is not a function` in `authed-route-ea4dff16d149.js`. Its
+`app-primary` bundle imports the smartphone icon from that route, while the
+route imports and immediately calls an initializer from `app-primary`.
+Loading `app-primary` first reaches the initializer before it is assigned.
+This also reproduces in the unmodified official ASAR; restarting or clearing
+the profile does not remove the import cycle.
+
+The signed 26.908.40834 package removes that reverse dependency. When checking
+this regression, import the extracted `app-primary-*.js` directly in a fresh
+Node process: importing the auth route first can hide the failure. The old
+package throws at `authed-route` during module evaluation; the new package
+loads successfully. Follow the module check with a packaged application
+startup check, since source checks alone do not verify the installed runtime.
