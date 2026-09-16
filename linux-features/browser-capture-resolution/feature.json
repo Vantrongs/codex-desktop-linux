@@ -1,0 +1,7 @@
+{
+  "id": "browser-capture-resolution",
+  "title": "Browser Capture Resolution",
+  "description": "Capture the in-app browser at its logical viewport resolution independently of preview scale.",
+  "defaultEnabled": false,
+  "entrypoints": { "patchDescriptors": "./patch.js" }
+}
