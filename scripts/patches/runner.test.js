@@ -40,6 +40,17 @@ test("runner context exposes enabled feature IDs", () => {
   }
 });
 
+test("required feature policies use the descriptor ID recorded in patch reports", (t) => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "runner-feature-policy-"));
+  t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+  const config = path.join(temp, "features.json");
+  fs.writeFileSync(config, '{"enabled":["browser-capture-resolution"]}\n');
+  assert.deepEqual(
+    requiredPatchNamesForProfile("upstream-build", { featuresConfigPath: config }),
+    ["feature:browser-capture-resolution:browser-capture-resolution"],
+  );
+});
+
 test("default empty registry leaves official extracted files byte-identical", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "runner-baseline-"));
   try {
