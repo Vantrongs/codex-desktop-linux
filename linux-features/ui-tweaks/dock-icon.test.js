@@ -975,3 +975,43 @@ test("desktop synchronization rejects every mismatched side-by-side identity fie
     }
   }
 });
+
+test("renamed main symbols preserve Linux window, tray and resource behavior", () => {
+  const vm = require("node:vm");
+  const names = { l: "electronApi", p: "pathApi", _: "fileApi", a: "flavors",
+    Hpe: "previews", Ay: "loadPreview", jy: "encode", R: "applyIcon",
+    L: "chooseIcon", z: "refreshIcon", v: "isMac", B: "controller" };
+  const renamed = currentMainSource.replace(/[A-Za-z_$][\w$]*/g, token => names[token] ?? token);
+  const patched = applyDockIconMainPatch(renamed);
+  assert.notEqual(patched, renamed);
+  assert.equal(applyDockIconMainPatch(patched), patched);
+  const calls = [];
+  const image = { isEmpty: () => false, toPNG: () => Buffer.from("png") };
+  const electron = {
+    app: { isPackaged: true, getAppPath: () => "/app" },
+    nativeTheme: { shouldUseDarkColorsForSystemIntegratedUI: true, on() {}, off() {} },
+    nativeImage: { createFromPath: file => { calls.push(["load", file]); return image; }, createEmpty: () => image },
+    BrowserWindow: { getAllWindows: () => [{ isDestroyed: () => false, setIcon: icon => calls.push(["window", icon]) }] },
+  };
+  const scope = { process: { platform: "linux", resourcesPath: "/app/resources", env: {} },
+    electronApi: electron, pathApi: path, fileApi: { existsSync: () => true },
+    flavors: { i: { Prod: "prod", Dev: "dev" } }, n: { Vl: { DOCK_ICON_PREFERENCE: "icon" } },
+    Dy: () => "/window.png", bF: async () => false, b6e: class {},
+    require: () => ({ spawn: () => ({ on() {}, stdin: { on() {}, end() {} }, unref() {} }) }),
+  };
+  vm.runInNewContext(patched + `;U9={tray:{isDestroyed:()=>false,setImage:image=>calls.push(["tray",image])}};
+    M6e({buildFlavor:"prod",settingsStore:{get:()=>"codex-system"},repoRoot:"/repo",isMacOS:false,isWindows:false,isDevMode:false,disposables:{add(){}}});`, { ...scope, calls });
+  assert.ok(calls.some(([kind, file]) => kind === "load" && file === "/app/resources/dock-icon/icon-codex-dark-color.png"));
+  assert.equal(calls.filter(([kind]) => kind === "window").length, 1);
+  assert.equal(calls.filter(([kind]) => kind === "tray").length, 1);
+});
+
+test("current official main supports the opt-in Dock icon independently", {
+  skip: !process.env.CODEX_MAIN_ASSET,
+}, () => {
+  const source = fs.readFileSync(process.env.CODEX_MAIN_ASSET, "utf8");
+  const result = captureWarns(() => applyDockIconMainPatch(source));
+  assert.deepEqual(result.warnings, []);
+  assert.notEqual(result.value, source);
+  assert.equal(applyDockIconMainPatch(result.value), result.value);
+});

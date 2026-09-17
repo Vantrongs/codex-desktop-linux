@@ -1,8 +1,8 @@
 "use strict";
 
-const currentPreviewGate = "function Hpe(e){if(process.platform!==`darwin`)return null";
+const currentPreviewGate = "function Hpe(e){if(process.platform!==`darwin`)return null;let t=Ey(e),n=Ay(`${Ty(e)}.png`),r=Ay(t.dark),i=Ay(t.light);return n==null||r==null||i==null?null:{appDefault:n,codexDark:r,codexLight:i}}";
 const patchedPreviewGate =
-  "function Hpe(e){if(process.platform!==`darwin`&&process.platform!==`linux`)return null";
+  currentPreviewGate.replace("process.platform!==`darwin`", "process.platform!==`darwin`&&process.platform!==`linux`");
 const currentAppInfoResource =
   "function Ay(e){if(e==null)return null;let t=l.app.isPackaged?(0,p.join)(process.resourcesPath,e):null;return jy(t!=null&&(0,_.existsSync)(t)?t:(0,p.join)(l.app.getAppPath(),`src`,`icons`,e))}";
 const patchedAppInfoResource =
@@ -68,13 +68,54 @@ function dockIconEnabled(context) {
   return dockIconConfig(context).enabled === true;
 }
 
+// The seven contracts share symbol roles, but upstream renames their minified
+// identifiers independently of behavior. Bind each role once and require every
+// later use to agree before applying any replacement.
+const mainSymbolRoles = new Set([
+  "Hpe", "Ey", "Ay", "Ty", "l", "p", "jy", "_", "O", "R", "I", "a",
+  "L", "A", "M", "z", "v", "j", "bF", "F", "T", "B", "w",
+]);
+function resolveMainContracts(source, templates) {
+  const bindings = new Map();
+  const escape = text => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  for (const template of templates) {
+    const pending = new Map();
+    let pattern = "", offset = 0;
+    for (const token of template.matchAll(/[A-Za-z_$][\w$]*/g)) {
+      if (!mainSymbolRoles.has(token[0])) continue;
+      pattern += escape(template.slice(offset, token.index));
+      const role = token[0];
+      if (bindings.has(role)) pattern += escape(bindings.get(role));
+      else if (pending.has(role)) pattern += `\\k<${pending.get(role)}>`;
+      else {
+        const group = `symbol${pending.size}`;
+        pending.set(role, group);
+        pattern += `(?<${group}>[A-Za-z_$][\\w$]*)`;
+      }
+      offset = token.index + role.length;
+    }
+    pattern += escape(template.slice(offset));
+    const owners = [...source.matchAll(new RegExp(pattern, "g"))];
+    if (owners.length !== 1) return null;
+    for (const [role, group] of pending) bindings.set(role, owners[0].groups[group]);
+  }
+  const materialize = template => template.replace(/[A-Za-z_$][\w$]*/g,
+    token => bindings.get(token) ?? token);
+  return {
+    current: currentMainContracts.map(materialize),
+    patched: patchedMainContracts.map(materialize),
+  };
+}
+
 function applyDockIconMainPatch(source) {
-  const currentCounts = currentMainContracts.map((needle) => countOccurrences(source, needle));
-  const patchedCounts = patchedMainContracts.map((needle) => countOccurrences(source, needle));
+  const contracts = resolveMainContracts(source, currentMainContracts) ??
+    resolveMainContracts(source, patchedMainContracts);
+  const currentCounts = contracts?.current.map(needle => countOccurrences(source, needle)) ?? [];
+  const patchedCounts = contracts?.patched.map(needle => countOccurrences(source, needle)) ?? [];
   const currentTrayMatches = matches(source, currentTrayRegistrationPattern);
   const patchedTrayMatches = matches(source, patchedTrayRegistrationPattern);
   if (
-    currentCounts.every((count) => count === 0) &&
+    contracts != null && currentCounts.every((count) => count === 0) &&
     patchedCounts.every((count) => count === 1) &&
     currentTrayMatches.length === 0 &&
     patchedTrayMatches.length === 1
@@ -82,7 +123,7 @@ function applyDockIconMainPatch(source) {
     return source;
   }
   if (
-    !currentCounts.every((count) => count === 1) ||
+    contracts == null || !currentCounts.every((count) => count === 1) ||
     !patchedCounts.every((count) => count === 0) ||
     currentTrayMatches.length !== 1 ||
     patchedTrayMatches.length !== 0
@@ -92,8 +133,8 @@ function applyDockIconMainPatch(source) {
     );
     return source;
   }
-  const patchedSource = currentMainContracts.reduce(
-    (patchedSource, needle, index) => patchedSource.replace(needle, patchedMainContracts[index]),
+  const patchedSource = contracts.current.reduce(
+    (patchedSource, needle, index) => patchedSource.replace(needle, contracts.patched[index]),
     source,
   );
   return patchedSource.replace(

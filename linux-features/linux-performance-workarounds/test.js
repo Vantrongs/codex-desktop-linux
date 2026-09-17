@@ -29,7 +29,7 @@ test("Markdown animation workaround covers the current semantic CSS classes", ()
 function currentAppShellTabLayoutFixture() {
   return [
     "function o9a(){let re=(e,t)=>{K(t.scrollWidth>t.clientWidth)},ie=$I(re),ye=L&&M!=null&&(q?`@max-[4rem]/app-shell-tab:pe-5`:`@max-[4rem]/app-shell-tab:group-hover/tab:pe-5`);return jsx(`button`,{\"data-app-shell-tab-close-button\":!0})}",
-    "function m9a(){let M=!0,A=!1,L=A?z9a:_9a;let Ae=M?L:void 0,je=!1,Me=M&&!A?L:!1,Oe={maxWidth:`160px`,minWidth:`90px`},Ie={},Le={},Re=()=>{},Ee=`@container/app-shell-tab`;return jsx(kf.div,{animate:Oe,\"data-app-shell-tab-controller\":ke,\"data-tab-id\":V,exit:Ae,inert:je,initial:Me,style:Ie,transition:Le,onAnimationComplete:Re})}",
+    "function m9a(){let M=!0,A=!1,L=A?z9a:_9a;let Ae=M?L:void 0,je=!1,Me=M&&!A?L:!1,Oe={maxWidth:`160px`,minWidth:`90px`},Ie={},Le=M?{duration:.2}:{duration:0},Re=()=>{},Ee=`@container/app-shell-tab`;return jsx(kf.div,{animate:Oe,\"data-app-shell-tab-controller\":ke,\"data-tab-id\":V,exit:Ae,inert:je,initial:Me,style:Ie,transition:Le,onAnimationComplete:Re})}",
     "var _9a={maxWidth:`0px`,minWidth:`0px`},z9a={maxWidth:`0px`,\"--tab-size-progress\":0};",
   ].join("");
 }
@@ -83,6 +83,27 @@ test("app-shell tab workaround rejects the retired direct collapsed animation co
     .replace("L=A?z9a:_9a", "L=_9a")
     .replace("Me=M&&!A?L:!1", "Me=M?L:!1");
 
+  assert.equal(matchesLinuxAppShellTabLayoutPerformanceContract(source), false);
+  assert.equal(applyLinuxAppShellTabLayoutPerformancePatch(source), source);
+});
+
+test("pointer-close width locking keeps a collapsed exit target when layout animation is disabled", () => {
+  const vm = require("node:vm");
+  for (const sharesWidth of [false, true]) {
+    const source = currentAppShellTabLayoutFixture().replace("M=!0,A=!1", `M=!1,A=${sharesWidth ? "!0" : "!1"}`);
+    const patched = applyLinuxAppShellTabLayoutPerformancePatch(source);
+    const result = vm.runInNewContext(patched + ";m9a()", {
+      jsx: (_type, props) => props, kf: { div: "motion.div" }, ke: "right", V: "closed-file",
+    });
+    assert.equal(result.exit?.maxWidth, "0px");
+    assert.equal(result.exit?.[sharesWidth ? "--tab-size-progress" : "minWidth"], sharesWidth ? 0 : "0px");
+    assert.equal(result.initial, false);
+    assert.equal(result.transition.duration, 0);
+  }
+});
+
+test("a partial presence repair is rejected instead of skipping its companion edits", () => {
+  const source = currentAppShellTabLayoutFixture().replace("let Ae=M?L:void 0", "let Ae=L");
   assert.equal(matchesLinuxAppShellTabLayoutPerformanceContract(source), false);
   assert.equal(applyLinuxAppShellTabLayoutPerformancePatch(source), source);
 });

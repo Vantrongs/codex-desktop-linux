@@ -100,14 +100,15 @@ function mountAnimations(source) {
     const exitPrefix = `,${exit}=`;
     const exitDeclaration = `let ${escapeRegExp(exitPrefix.slice(1))}`;
     const unpatched = new RegExp(`${exitDeclaration}([A-Za-z_$][\\w$]*)\\?([A-Za-z_$][\\w$]*):void 0,[\\s\\S]{0,100}?${escapeRegExp(initialPrefix)}(\\1&&![A-Za-z_$][\\w$]*\\?\\2:!1),`, "gu");
-    const patched = new RegExp(`${exitDeclaration}([A-Za-z_$][\\w$]*)\\?([A-Za-z_$][\\w$]*):void 0,[\\s\\S]{0,100}?${escapeRegExp(initialPrefix)}!1,`, "gu");
+    const patched = new RegExp(`${exitDeclaration}([A-Za-z_$][\\w$]*),[\\s\\S]{0,100}?${escapeRegExp(initialPrefix)}!1,`, "gu");
     const unpatchedMatches = [...prefix.matchAll(unpatched)];
     const patchedMatches = [...prefix.matchAll(patched)];
     const pair = unpatchedMatches.at(-1) ?? patchedMatches.at(-1);
     if (pair == null) continue;
     const isPatched = patchedMatches.at(-1) === pair;
+    const exitTarget = isPatched ? pair[1] : pair[2];
     const selectedAnimation = vicinity.match(
-      new RegExp(`${escapeRegExp(pair[2])}=[A-Za-z_$][\\w$]*\\?([A-Za-z_$][\\w$]*):([A-Za-z_$][\\w$]*)`, "u"),
+      new RegExp(`${escapeRegExp(exitTarget)}=[A-Za-z_$][\\w$]*\\?([A-Za-z_$][\\w$]*):([A-Za-z_$][\\w$]*)`, "u"),
     );
     const selectedCollapsedAnimation = selectedAnimation != null &&
       selectedAnimation.slice(1).every((name) =>
@@ -121,7 +122,11 @@ function mountAnimations(source) {
     const relativeInitialStart = pair[0].indexOf(initialPrefix) + initialPrefix.length;
     const expressionStart = declarationStart + relativeInitialStart;
     const expression = isPatched ? "!1" : pair[3];
-    candidates.push({ expressionStart, expressionEnd: expressionStart + expression.length, patched: isPatched });
+    const exitExpressionStart = declarationStart + `let ${exit}=`.length;
+    const exitExpression = isPatched ? exitTarget : `${pair[1]}?${exitTarget}:void 0`;
+    candidates.push({ expressionStart, expressionEnd: expressionStart + expression.length,
+      exitExpressionStart, exitExpressionEnd: exitExpressionStart + exitExpression.length,
+      exitTarget, patched: isPatched });
   }
   return candidates;
 }
@@ -146,6 +151,9 @@ function applyLinuxAppShellTabLayoutPerformancePatch(source) {
     if (!mount.patched && measurements.every(({ patched }) => !patched) && !helper) {
       const edits = [
         { start: mount.expressionStart, end: mount.expressionEnd, text: "!1" },
+        // Pointer-close width locking disables layout animation, not presence.
+        // Keep exit registered; upstream already uses duration:0 in this mode.
+        { start: mount.exitExpressionStart, end: mount.exitExpressionEnd, text: mount.exitTarget },
         ...measurements.map((measurement) => ({
           start: measurement.callbackStart,
           end: measurement.callbackEnd,

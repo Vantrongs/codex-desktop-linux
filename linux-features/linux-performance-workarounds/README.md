@@ -43,8 +43,8 @@ current official topology-recovery path already keeps only spawn metadata plus
 one content-free final turn and is verified the same way. A child thread's
 content is loaded only when that thread is explicitly opened or otherwise
 addressed. An inactive owned thread is unsubscribed after 30 minutes, which
-removes its turns from renderer memory; the app-server's existing 30-minute
-idle-unload then removes the cold runtime. Active views, running turns,
+removes its turns from renderer memory; the app-server's configured
+idle-unload delay then removes the cold runtime. Active views, running turns,
 approvals, and pending user input remain loaded.
 
 Enable it in `linux-features/features.json` only for a reproduced regression:
@@ -59,3 +59,9 @@ measured regression and run:
 ```bash
 node --test linux-features/linux-performance-workarounds/test.js
 ```
+
+The tab workaround also retains an explicit collapsed exit target while
+pointer-close width locking disables layout animation. Motion must still register
+the exit lifecycle in that mode; the upstream zero-duration transition makes
+removal immediate. Otherwise closed right-panel tabs can remain as inert icon
+fragments until the panel is remounted.
