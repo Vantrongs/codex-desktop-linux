@@ -265,7 +265,7 @@ function recordReplayActiveSpeechContextExpression(dispatchVar, transcriptVar) {
 function recordReplayCompiledTranscriptPattern() {
   const id = String.raw`[A-Za-z_$][\w$]*`;
   return new RegExp(
-    String.raw`(?<transcript>${id})\.length>0\?\((?<dispatch>(?<persistence>${id})==null\?(?<history>${id})\.getInstance\(\)\.dispatchMessage\(\`global-dictation-record-history-item\`,\{text:\k<transcript>\}\):\k<persistence>\.setTranscript\(\k<transcript>\),(?<analytics>${id})\.performance\.mark\(\`transcript_dispatched\`\),(?<action>${id}\.action)===\`send\`\?await (?<handlers>${id})\.onTranscriptSend\(\k<transcript>\):await \k<handlers>\.onTranscriptInsert\(\k<transcript>\))\):(?<cancel>${id}\.onTranscriptCancel\?\.\(\))`,
+    String.raw`(?<transcript>${id})\.length>0\?\((?<dispatch>(?<persistence>${id})==null\?(?<history>${id})\.getInstance\(\)\.dispatchMessage\(\`global-dictation-record-history-item\`,\{text:\k<transcript>\}\):\k<persistence>\.setTranscript\(\k<transcript>\),(?<analytics>${id})\.performance\.mark\(\`transcript_dispatched\`\),(?<action>${id}\.action)===\`send\`\?await (?<handlers>${id})\.onTranscriptSend\(\k<transcript>\):\(await \k<handlers>\.onTranscriptInsert\(\k<transcript>\),(?<pending>${id})\.current===(?<session>${id})&&\k<pending>\.current\.action===\`send\`&&await \k<handlers>\.onTranscriptSend\(\`\`\)\))\):(?<cancel>${id}\.onTranscriptCancel\?\.\(\))`,
     "",
   );
 }

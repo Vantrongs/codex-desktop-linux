@@ -9,6 +9,7 @@ const PATCH_MARKER = "codexLinuxGitPluginUpdateV1";
 const COMPONENT_NAME = "codexLinuxGitPluginUpdateButton";
 const PARENT_BUSY_STATE = "codexLinuxGitPluginUpdateBusyV1";
 const PARENT_BUSY_SETTER = "setCodexLinuxGitPluginUpdateBusyV1";
+const REQUEST_CLIENT_FACTORY = "codexLinuxGitPluginRequestClientV1";
 
 function countOccurrences(source, needle) {
   let count = 0;
@@ -116,6 +117,10 @@ function hasInstalledPluginUpdateButton(source) {
   );
   return countOccurrences(source, PATCH_MARKER) === 1 &&
     source.includes(runtime) &&
+    (requestClientVar == null || (
+      source.includes(`requestClient:${REQUEST_CLIENT_FACTORY}(`) &&
+      new RegExp(`function ${REQUEST_CLIENT_FACTORY}\\(scope,host\\)\\{return ${JS_IDENT}\\(scope,host\\)\\}`).test(source)
+    )) &&
     parentActionPattern.test(source) &&
     source.includes(
       `[${PARENT_BUSY_STATE},${PARENT_BUSY_SETTER}]=(0,${reactVar}.useState)(!1)`,
@@ -164,7 +169,7 @@ function findLegacyPluginDetailBinding(source) {
     return null;
   }
 
-  const hostIdMatch = block.match(new RegExp(`,(${JS_IDENT})=${header[2]}\\?\\?[^,]+`));
+  const hostIdMatch = block.match(new RegExp(`(?:let |,)(${JS_IDENT})=${header[2]}\\?\\?[^,]+`));
   const directMarketplacePathMatch = block.match(
     new RegExp(`directMarketplacePath:(${JS_IDENT})`),
   );
@@ -289,7 +294,7 @@ function findReactCompiledPluginDetailBinding(source) {
   }
 
   const hostIdMatch = block.match(
-    new RegExp(`,(${JS_IDENT})=${propsMatch[1]}\\?\\?[^,]+`),
+    new RegExp(`(?:let |,)(${JS_IDENT})=${propsMatch[1]}\\?\\?[^,]+`),
   );
   const directMarketplacePathMatch = block.match(
     new RegExp(`directMarketplacePath:(${JS_IDENT})`),
@@ -346,8 +351,9 @@ function findReactCompiledPluginDetailBinding(source) {
     pluginVar: pluginMatch[1],
     reactVar: reactMatch[1],
     requestClientExpression: hasCurrentRequestClient
-      ? `${requestFactoryMatch[1]}(${requestScopeMatch[1]},${hostIdVar})`
+      ? `${REQUEST_CLIENT_FACTORY}(${requestScopeMatch[1]},${hostIdVar})`
       : null,
+    requestFactoryVar: hasCurrentRequestClient ? requestFactoryMatch[1] : null,
     shareActionsExpression: actionMatch[4],
     refreshVar: uniqueRefreshEventVars[0],
     stateAnchor: header,
@@ -389,6 +395,7 @@ function applyPluginUpdateButtonPatch(source) {
     reactVar,
     refreshVar,
     requestClientExpression,
+    requestFactoryVar,
     shareActionsExpression = "null",
     stateAnchor,
     stateReplacement,
@@ -427,7 +434,12 @@ function applyPluginUpdateButtonPatch(source) {
     reactVar,
     requestClientProp: requestClientExpression != null,
   });
-  return `${source.slice(0, start)}${runtime}${patchedBlock}${source.slice(end)}`;
+  // Resolve the minified import in module scope, not inside the page function:
+  // React Compiler locals can reuse that identifier (26.908: `be={hostId:W}`).
+  // Defer reading the import until render so upstream lazy initializers run first.
+  const factory = requestFactoryVar == null ? "" :
+    `function ${REQUEST_CLIENT_FACTORY}(scope,host){return ${requestFactoryVar}(scope,host)}`;
+  return `${source.slice(0, start)}${factory}${runtime}${patchedBlock}${source.slice(end)}`;
 }
 
 const descriptors = [
@@ -449,6 +461,7 @@ const descriptors = [
 module.exports = {
   COMPONENT_NAME,
   PATCH_MARKER,
+  REQUEST_CLIENT_FACTORY,
   applyPluginUpdateButtonPatch,
   descriptors,
   findPluginDetailBinding,

@@ -182,7 +182,7 @@ test("remote-control UI descriptors match the current app chunks", () => {
   );
 
   assert.ok(
-    remoteControlConnectionsPatch.pattern.test("app-initial-BTphDPeq.js"),
+    remoteControlConnectionsPatch.pattern.test("app-primary-current.js"),
   );
   assert.equal(
     remoteControlConnectionsPatch.pattern.test(
@@ -213,13 +213,15 @@ test("remote-control UI feature patches matching webview assets and records patc
         const appInitialAsset = "app-initial-BTphDPeq.js";
         fs.writeFileSync(
           path.join(assetsDir, appInitialAsset),
-          "function Twt(){let e=(0,kwt.c)(3),{data:t}=Vr(y4,Br(B2)),n=BN(`4114442250`);if(t?.config[`features.remote_connections`]===!0)return!0;let r=t?.config.features;if(typeof r!=`object`||!r||Array.isArray(r))return n;let i;return e[0]!==r||e[1]!==n?(i=Object.getOwnPropertyDescriptor(r,`remote_connections`)?.value===!0||n,e[0]=r,e[1]=n,e[2]=i):i=e[2],i}function D8(e){return e(RN,`4114442250`)?`enabled`:`disabled`}function a({remoteControlConnectionsState:e,slingshotEnabled:t}){return t&&(e?.available??!0)&&e?.accessRequired!==!0}",
+          "function Twt(){let e=(0,kwt.c)(3),{data:t}=Vr(y4,Br(B2)),n=BN(`4114442250`);if(t?.config[`features.remote_connections`]===!0)return!0;let r=t?.config.features;if(typeof r!=`object`||!r||Array.isArray(r))return n;let i;return e[0]!==r||e[1]!==n?(i=Object.getOwnPropertyDescriptor(r,`remote_connections`)?.value===!0||n,e[0]=r,e[1]=n,e[2]=i):i=e[2],i}function D8(e){return e(RN,`4114442250`)?`enabled`:`disabled`}",
         );
         fs.writeFileSync(
           path.join(assetsDir, "settings-route-state-BwIfDYxh.js"),
           "var Z=`remote_control`;function Ie(e){return e.stage===`beta`?e.name!==`memories`&&e.name!==`multi_agent`&&e.name!==`plugins`&&e.name!==`plugin`&&e.name!==`remote_control`&&!e.name.startsWith(`realtime_`)&&e.name!==`chronicle`&&e.name!==`workspace_dependencies`:!1}",
         );
 
+        fs.writeFileSync(path.join(assetsDir, "app-primary-current.js"),
+          "function a({remoteControlConnectionsState:e,slingshotEnabled:t}){return t&&(e?.available??!0)&&e?.accessRequired!==!0}");
         const report = createPatchReport();
         const { warnings } = captureWarns(() => patchExtractedApp(tempApp, { report }));
         assert.ok(
@@ -236,7 +238,7 @@ test("remote-control UI feature patches matching webview assets and records patc
         );
         assert.match(
           fs.readFileSync(
-            path.join(assetsDir, appInitialAsset),
+            path.join(assetsDir, "app-primary-current.js"),
             "utf8",
           ),
           /navigator\.userAgent\.includes\(`Linux`\)/,

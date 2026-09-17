@@ -97,6 +97,11 @@ What it changes:
   not download or install another CLI. It also stages a single-instance
   requirement marker.
 
+The official 26.911 package now includes a Linux TPM device-key addon. This
+feature continues to route the class's `getAddon()` through its existing Linux
+provider so an update preserves previously enrolled key identities. The official
+addon and its TPM libraries remain packaged for configurations without this feature.
+
 ## Control topology boundaries
 
 This feature touches three different control paths. They must stay independent:

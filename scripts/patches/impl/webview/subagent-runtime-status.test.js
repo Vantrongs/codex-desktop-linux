@@ -14,7 +14,7 @@ const {
 
 function fixture() {
   return [
-    "function Build({cachedConversations:e,conversationTurns:t,getIndexedSubagentItems:n,getIndexedSubagentProgress:r,parentConversationId:i,sourceLinkedThreads:a,sourceLinkedThreadsDiscoveryComplete:o=a!=null,threadSummaries:s=[]}){",
+    "function Build({cachedConversations:e,conversationTurns:t,getIndexedSubagentItems:n,getIndexedSubagentProgress:r,includeRow:rowFilter,parentConversationId:i,sourceLinkedThreads:a,sourceLinkedThreadsDiscoveryComplete:o=a!=null,threadSummaries:s=[]}){",
     "let child={threadRuntimeStatus:e.runtimeStatus??n.threadRuntimeStatus},membership={runtimeStatus:e.runtimeStatus,thread:e.thread,conversationId:e.conversationId};",
     "return Project({membership,latestReference:ref,childConversation:child,currentParentTurnKey:key,discoveryComplete:o,runtimeStatus:membership.runtimeStatus??runtime(summaryById.get(membership.conversationId),cached)??membership.thread?.status??null})}",
     "function Project({membership:e,latestReference:t,childConversation:n,currentParentTurnKey:r,discoveryComplete:i,runtimeStatus:a}){",

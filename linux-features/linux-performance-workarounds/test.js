@@ -8,7 +8,23 @@ const descriptors = require("./patch.js");
 const {
   applyLinuxAppShellTabLayoutPerformancePatch,
   matchesLinuxAppShellTabLayoutPerformanceContract,
+  applyLinuxMarkdownAnimationPerformancePatch,
+  matchesLinuxMarkdownAnimationPerformanceContract,
 } = require("./implementation.js");
+
+test("Markdown animation workaround covers the current semantic CSS classes", () => {
+  const root = "._MarkdownRoot_abc_1[data-markdown-animated]";
+  const selectors = ":is(._FadeIn_abc_2,._HorizontalRule_abc_3,._ListItem_abc_4,._TableRow_abc_5,._Blockquote_abc_6)";
+  const image = `${root} ._ImageEnter_abc_8{transform-origin:50%;animation:.18s ease-out both _image-enter_abc_1}`;
+  const source = `${root} ${selectors}{opacity:0;animation:_fade-in_abc_1 .2s ease forwards;animation-delay:var(--fade-delay,0s)}` +
+    `${root} ._FadeListDecoration_abc_7::marker{animation:_fade-in-marker_abc_1 .2s ease forwards;animation-delay:var(--fade-delay,0s)}` + image;
+  assert.equal(matchesLinuxMarkdownAnimationPerformanceContract(source), true);
+  const patched = applyLinuxMarkdownAnimationPerformancePatch(source);
+  assert.ok(patched.includes(`${selectors}{opacity:1;animation:none}`));
+  assert.ok(patched.endsWith(image));
+  assert.equal(applyLinuxMarkdownAnimationPerformancePatch(patched), patched);
+  assert.equal(matchesLinuxMarkdownAnimationPerformanceContract(source.replace("._TableRow_abc_5", "._Different_abc_5")), false);
+});
 
 function currentAppShellTabLayoutFixture() {
   return [

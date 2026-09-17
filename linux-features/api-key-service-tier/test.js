@@ -105,7 +105,7 @@ test("current package descriptors use the semantic app-initial owner", () => {
   assert.ok(descriptors.filter(({ id }) => id !== "api-key-service-tier-resolver")
     .every((descriptor) => descriptor.pattern.test("app-initial-Bd3Z1bES.js")));
   assert.ok(descriptors.find(({ id }) => id === "api-key-service-tier-resolver")
-    ?.pattern.test("src-25d8c35b9f39.js"));
+    ?.pattern.test("app-initial-service-tiers-current.js"));
   assert.ok(descriptors.every((descriptor) => !descriptor.pattern.test("projects-index-page-DjNy92Xe.js")));
 });
 
@@ -155,7 +155,7 @@ test("partial current drift is reported when the other exact target still applie
           "app-initial-fallback-current.js",
         ),
         [
-          "function tEe(e){return[gQ,...(e?.serviceTiers??[]).map(t=>({description:eEe(t),iconKind:fQ(t.id,t.name),label:$Te(t),tier:t,value:t.id}))]}",
+          "function tEe(e){return[gQ,...(e?.serviceTiers??[]).map(t=>{let n=fQ(t.id,t.name),r=n===`fast`?speed(e?.model):null;return{description:eEe(t,r),iconKind:n,label:$Te(t),speedMultiplier:r,tier:t,value:t.id}})]}",
         ].join(""),
       );
 
@@ -301,7 +301,7 @@ test("model list marker rejects the superseded pre-catalog signature byte-identi
 
 test("fallback fast tier is synthesized only for API-key model catalog entries", () => {
   const source = [
-    "function tEe(e){return[gQ,...(e?.serviceTiers??[]).map(t=>({description:eEe(t),iconKind:fQ(t.id,t.name),label:$Te(t),tier:t,value:t.id}))]}",
+    "function tEe(e){return[gQ,...(e?.serviceTiers??[]).map(t=>{let n=fQ(t.id,t.name),r=n===`fast`?speed(e?.model):null;return{description:eEe(t,r),iconKind:n,label:$Te(t),speedMultiplier:r,tier:t,value:t.id}})]}",
     "function nEe(e,t,n){return e?.find(e=>e.model===t&&hQ(e,n))??null}",
   ].join("");
 
@@ -318,8 +318,8 @@ test("fallback fast tier is synthesized only for API-key model catalog entries",
 
 test("split service tier assets round-trip synthetic fast only for marked API-key models", () => {
   const optionsSource = [
-    "const gQ={value:null};function eEe(e){return e.description}function fQ(e){return e}function $Te(e){return e.name}",
-    "function tEe(e){return[gQ,...(e?.serviceTiers??[]).map(t=>({description:eEe(t),iconKind:fQ(t.id,t.name),label:$Te(t),tier:t,value:t.id}))]}",
+    "const gQ={value:null};function eEe(e){return e.description}function fQ(e){return e}function $Te(e){return e.name}function speed(e){return 1.5}",
+    "function tEe(e){return[gQ,...(e?.serviceTiers??[]).map(t=>{let n=fQ(t.id,t.name),r=n===`fast`?speed(e?.model):null;return{description:eEe(t,r),iconKind:n,label:$Te(t),speedMultiplier:r,tier:t,value:t.id}})]}",
   ].join("");
   const resolverSource = [
     "function py(e,t){let n=t?.trim().toLowerCase();return e===`priority`||e===`fast`||n===`fast`?`fast`:null}",
@@ -332,7 +332,7 @@ test("split service tier assets round-trip synthetic fast only for marked API-ke
     try {
       const assetsDir = path.join(tempApp, "webview", "assets");
       const optionsPath = path.join(assetsDir, "app-initial-97cc141651bb.js");
-      const resolverPath = path.join(assetsDir, "src-25d8c35b9f39.js");
+      const resolverPath = path.join(assetsDir, "app-initial-service-tiers-current.js");
       fs.mkdirSync(assetsDir, { recursive: true });
       fs.writeFileSync(optionsPath, optionsSource);
       fs.writeFileSync(resolverPath, resolverSource);
@@ -358,6 +358,7 @@ test("split service tier assets round-trip synthetic fast only for marked API-ke
       const syntheticOption = optionsFor(apiKeyModel).find(({ value }) => value === "fast");
 
       assert.equal(syntheticOption?.value, "fast");
+      assert.equal(syntheticOption?.speedMultiplier, 1.5);
       assert.equal(syntheticOption?.tier.id, "fast");
       assert.equal(resolveTier(apiKeyModel, syntheticOption.value)?.id, "fast");
       assert.equal(resolveTier(apiKeyModel, syntheticOption.value)?.name, "Fast");
@@ -422,7 +423,7 @@ test("combined patch updates both service tier gate and fallback options", () =>
   const source = [
     "function sxe(e){let t=(0,cxe.c)(6),n=X(os),r=e?.hostId??n,i=Cf(r),a=i?.authMethod===`chatgpt`,o=i?.authMethod??null,s;t[0]!==r||t[1]!==o?(s={authMethod:o,hostId:r},t[0]=r,t[1]=o,t[2]=s):s=t[2];let{data:c,isPending:l}=ye(is,s),u=!!i?.isLoading||a&&l,d=a&&!u&&c!=null&&c?.requirements?.featureRequirements?.fast_mode!==!1,f;return t[3]!==u||t[4]!==d?(f={isServiceTierAllowed:d,isLoading:u},t[3]=u,t[4]=d,t[5]=f):f=t[5],f}",
     currentModelFixture(),
-    "function tEe(e){return[gQ,...(e?.serviceTiers??[]).map(t=>({description:eEe(t),iconKind:fQ(t.id,t.name),label:$Te(t),tier:t,value:t.id}))]}",
+    "function tEe(e){return[gQ,...(e?.serviceTiers??[]).map(t=>{let n=fQ(t.id,t.name),r=n===`fast`?speed(e?.model):null;return{description:eEe(t,r),iconKind:n,label:$Te(t),speedMultiplier:r,tier:t,value:t.id}})]}",
   ].join("");
 
   const patched = applyPatchTwice(applyApiKeyServiceTierPatch, source);

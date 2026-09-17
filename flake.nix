@@ -75,7 +75,7 @@
           alsa-lib atk at-spi2-atk at-spi2-core cairo cups dbus expat
           gdk-pixbuf glib graphite2 gtk3 libdrm libgbm libglvnd libnotify libusb1
           libxkbcommon mesa nspr nss openssl pango pipewire systemd stdenv.cc.cc.lib
-          wayland xz zstd libX11 libXcomposite libXcursor libXdamage libXext
+          tpm2-tss wayland xz zstd libX11 libXcomposite libXcursor libXdamage libXext
           libXfixes libXi libXrandr libXScrnSaver libXtst libxcb libxcrypt-legacy zlib
         ];
         runtimeLibraryPath = lib.concatStringsSep ":" [
@@ -987,6 +987,11 @@
               NODE_PATH="$app/resources/cua_node/lib/node_modules" \
               timeout 20 "$app/resources/cua_node/bin/node" -e \
                 "require('sharp'); if (process.execPath !== process.env.CODEX_CUA_NODE_PATH) throw new Error('unexpected process.execPath')"
+            # Loading the official addon catches missing TPM dependencies without
+            # creating, reading, or deleting any device key.
+            timeout 20 "$app/resources/cua_node/bin/node" -e \
+              'const addon = require(process.argv[1]); for (const key of ["createDeviceKey", "deleteDeviceKey", "getDeviceKeyPublic", "signDeviceKey"]) { if (typeof addon[key] !== "function") throw new Error("missing native export: " + key); }' \
+              "$app/resources/native/remote-control-device-key.node"
             timeout 10 "$app/${officialRuntimePaths.sky}" --help >/dev/null
             timeout 10 "$app/${officialRuntimePaths.extensionHost}" --help >/dev/null
             "$app/resources/rg" --version

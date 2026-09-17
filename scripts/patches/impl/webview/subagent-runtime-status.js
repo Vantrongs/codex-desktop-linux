@@ -6,7 +6,7 @@ const IDENTIFIER = "[A-Za-z_$][\\w$]*";
 const PROJECTION_BUILDER_PATTERN = new RegExp(
   `function (${IDENTIFIER})\\(\\{cachedConversations:(${IDENTIFIER}),` +
     `conversationTurns:(${IDENTIFIER}),getIndexedSubagentItems:(${IDENTIFIER}),` +
-    `getIndexedSubagentProgress:(${IDENTIFIER}),parentConversationId:(${IDENTIFIER}),` +
+    `getIndexedSubagentProgress:(${IDENTIFIER}),includeRow:${IDENTIFIER},parentConversationId:(${IDENTIFIER}),` +
     `sourceLinkedThreads:(${IDENTIFIER}),sourceLinkedThreadsDiscoveryComplete:(${IDENTIFIER})=` +
     `\\7!=null,threadSummaries:(${IDENTIFIER})=\\[\\]\\}\\)\\{`,
   "gu",

@@ -5,9 +5,9 @@ const path = require("node:path");
 
 const DEVICE_KEY_CLIENT_MARKER = "codexLinuxRemoteControlDeviceKeyClient";
 const DEVICE_KEY_GUARD =
-  "if(process.platform!==`darwin`&&process.platform!==`win32`)throw Error(`Remote control device keys are only available on macOS and Windows`);";
+  "getAddon(){if(this.resourcesPath==null)throw Error(`Remote control device keys require resourcesPath`);";
 const DEVICE_KEY_GUARD_REPLACEMENT =
-  "if(process.platform===`linux`)return codexLinuxRemoteControlDeviceKeyClient();if(process.platform!==`darwin`&&process.platform!==`win32`)throw Error(`Remote control device keys are only available on macOS and Windows`);";
+  "getAddon(){if(process.platform===`linux`)return codexLinuxRemoteControlDeviceKeyClient();if(this.resourcesPath==null)throw Error(`Remote control device keys require resourcesPath`);";
 const DEVICE_KEY_REQUIRE_NEEDLE =
   /(?:var|let|const)\s+[A-Za-z_$][\w$]*=\(0,[A-Za-z_$][\w$]*\.createRequire\)\(__filename\),[A-Za-z_$][\w$]*=`remote-control-device-key\.node`/u;
 const REMOTE_CONTROL_SETTINGS_VISIBILITY_NEEDLE =

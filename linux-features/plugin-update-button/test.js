@@ -274,7 +274,31 @@ test("patches the current official Linux plugin detail action layout", () => {
   );
   assert.match(patched, /marketplacePath:K\.marketplacePath\?\?Ge/u);
   assert.match(patched, /onBusyChange:setCodexLinuxGitPluginUpdateBusyV1,onUpdated:xn/u);
-  assert.match(patched, /requestClient:Ee\(b,G\)/u);
+  assert.match(patched, /requestClient:codexLinuxGitPluginRequestClientV1\(b,G\)/u);
+});
+
+test("plugin detail renders when its local variable shadows the imported request factory", () => {
+  const source = currentOfficialLinuxPluginDetailFixture().replace(
+    "[F,I]=(0,Zf.useState)(null)",
+    "Ee={hostId:a},[F,I]=(0,Zf.useState)(null)",
+  );
+  const patched = applyPluginUpdateButtonPatch(source);
+  const scope = {};
+  const client = { sendRequest() {} };
+  const jsx = (type, props) => ({ type, props });
+  const render = new Function(
+    "Ee", "Go", "ko", "Zf", "route", "Ua", "fallbackPath", "M", "Yf", "Qf", "qc", "Xi", "Zi", "Hi", "za",
+    `${patched};return Df({hostId:"local"});`,
+  );
+  const result = render(
+    (actualScope, host) => { assert.equal(actualScope, scope); assert.equal(host, "local"); return client; },
+    () => scope, {}, { useState: () => [null, () => {}], useEffectEvent: callback => callback },
+    null, () => ({ directMarketplacePath: "/marketplace" }), null,
+    () => ({ plugin: { summary: { installed: true, name: "example", source: { source: "git" } }, marketplaceName: "example" }, refetch() {} }),
+    () => {}, { jsx, jsxs: jsx, Fragment: "fragment" }, "actions", false, false, null, "existing-share",
+  );
+  assert.equal(result.props.shareActions.props.children[0].props.requestClient, client);
+  assert.equal(result.props.shareActions.props.children[1], "existing-share");
 });
 
 test("patches the 26.831 plugin detail action and refresh layout", () => {
@@ -285,7 +309,7 @@ test("patches the 26.831 plugin detail action and refresh layout", () => {
   assert.equal(applyPluginUpdateButtonPatch(patched), patched);
   assert.equal(hasInstalledPluginUpdateButton(patched), true);
   assert.match(patched, /children:\[\(0,\$\.jsx\)\(codexLinuxGitPluginUpdateButton,[\s\S]{0,1000}?,Ma\]\}\)/u);
-  assert.match(patched, /requestClient:I\(y,W\)/u);
+  assert.match(patched, /requestClient:codexLinuxGitPluginRequestClientV1\(y,W\)/u);
 });
 
 test("plugin detail keeps its refetch binding when upstream inserts template data", () => {
@@ -298,6 +322,15 @@ test("plugin detail keeps its refetch binding when upstream inserts template dat
   assert.match(patched, /onUpdated:On/u);
   assert.match(patched, /plugin:K,serviceAppTemplates:Jt,refetch:tn/u);
   assert.equal(applyPluginUpdateButtonPatch(patched), patched);
+});
+
+test("plugin detail resolves a host binding declared after a statement boundary", () => {
+  const source = currentOfficialLinux2631PluginDetailFixture().replace(
+    ",W=a??route?.hostId??`local`", ";let W=a??route?.hostId??`local`",
+  );
+  const patched = applyPluginUpdateButtonPatch(source);
+  assert.equal(hasInstalledPluginUpdateButton(patched), true);
+  assert.match(patched, /requestClient:codexLinuxGitPluginRequestClientV1\(y,W\)/u);
 });
 
 test("composes the update button with an existing plugin share action", () => {

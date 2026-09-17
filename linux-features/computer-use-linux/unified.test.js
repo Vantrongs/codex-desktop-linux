@@ -46,6 +46,19 @@ test("browser-only sessions retain upstream initialization without a native clie
   assert.match(native.NODE_REPL_JS_BANNER, /native-client\.mjs/u);
   assert.equal(JSON.parse(native.NODE_REPL_TRUSTED_SERVICES).sky, "/plugin/scripts/native-service.mjs");
 });
+
+test("renamed minified trusted-service export retains the real environment key", () => {
+  const source = selector.replaceAll("constants.Il", "constants.Gl");
+  const result = patch(source);
+  const configure = vm.runInNewContext(result + ";configure", {
+    pluginRoot: () => "/plugin",
+    path: { default: require("node:path") },
+    constants: { Gl: "NODE_REPL_TRUSTED_SERVICES" },
+  });
+  assert.equal(JSON.parse(configure({ surfaces: ["computer"] }).env.NODE_REPL_TRUSTED_SERVICES).sky,
+    "/plugin/scripts/native-service.mjs");
+  assert.equal(patch(result), result);
+});
 test("unified selector drift and ambiguous owners fail the build", () => {
   assert.throws(() => patch(selector.replace("serviceAppPath!=null", "serviceAppPath")), /unified.*contract/i);
   assert.throws(() => patch(selector + selector), /unified.*contract/i);
@@ -66,4 +79,17 @@ test("unified mode rejects appended gates and changed companion selectors", () =
     assert.throws(() => patch(changed), /unified.*contract/i);
     assert.throws(() => patch(selector + changed), /unified.*contract/i);
   }
+});
+
+test("unrelated plugin caches cannot change the native service root", () => {
+  const unrelated = 'function another(e){let a=path.default.join(otherRoot,`.mcp.json`);return a}';
+  const result = patch(selector + unrelated);
+  assert.match(result, /sky=path\.default\.join\(i,`scripts`,`native-service\.mjs`\)/);
+  assert.ok(result.endsWith(unrelated));
+  assert.match(patch(`function bundle(exports){${selector + unrelated}}`),
+    /sky=path\.default\.join\(i,`scripts`,`native-service\.mjs`\)/);
+  assert.equal(patch(result), result);
+  assert.throws(() => patch(selector.replace('a=path.default.join(i,`.mcp.json`)',
+    'b=path.default.join(otherRoot,`.mcp.json`),a=path.default.join(i,`.mcp.json`)')),
+    /changed plugin cache relationship/);
 });

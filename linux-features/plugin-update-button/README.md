@@ -56,3 +56,9 @@ bundle no longer matches the complete expected contract, the enabled feature
 build fails instead of applying or accepting a partial action. The isolated
 package build applies the feature to the selected upstream payload and rejects
 a missing or incomplete required marker contract.
+
+The request-client factory is resolved by a deferred module-scope wrapper.
+React Compiler can reuse a minified import name for a local page object; calling
+that name directly from the injected action caused `be is not a function` when
+opening plugin details in 26.908.70816. The render regression test includes that
+shadowing case and verifies that the original share action survives.

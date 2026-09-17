@@ -1,5 +1,7 @@
 "use strict";
 
+const { findMatchingBrace } = require("../../scripts/patches/lib/minified-js.js");
+
 function applyUnifiedComputerUsePatch(source) {
   // Match the current selector, including variable relationships. Both pristine
   // and patched forms must have exactly one owner; drift must abort the build.
@@ -18,12 +20,11 @@ function applyUnifiedComputerUsePatch(source) {
   const patchedServicePattern = /(?<surfaces>[\w$]+)\.surfaces\.includes\(`computer`\)&&\((?<services>[\w$]+)\.sky=(?<path>[\w$]+)\.default\.join\((?<pluginRoot>[\w$]+),`scripts`,`native-service\.mjs`\)\)/g;
   const currentServices = [...source.matchAll(currentServicePattern)];
   const patchedServices = [...source.matchAll(patchedServicePattern)];
-  const currentBannerPattern = /CUA_REPL_ENABLED_SURFACES:(?<surfaces>[\w$]+)\.surfaces\.join\(`,`\),\[(?<constants>[\w$]+)\.Il\]:JSON\.stringify\((?<services>[\w$]+)\)/g;
-  const patchedBannerPattern = /CUA_REPL_ENABLED_SURFACES:(?<surfaces>[\w$]+)\.surfaces\.join\(`,`\),\.\.\.\(\k<surfaces>\.surfaces\.includes\(`computer`\)\?\{NODE_REPL_JS_BANNER:`await import\("@oai\/cua\/tinyskyAlt"\);await\(await import\(\$\{JSON\.stringify\((?<path>[\w$]+)\.default\.join\((?<pluginRoot>[\w$]+),`scripts`,`native-client\.mjs`\)\)\}\)\)\.installLinuxComputerUse\(cua\);`\}:\{\}\),\[(?<constants>[\w$]+)\.Il\]:JSON\.stringify\((?<services>[\w$]+)\)/g;
+  const currentBannerPattern = /CUA_REPL_ENABLED_SURFACES:(?<surfaces>[\w$]+)\.surfaces\.join\(`,`\),\[(?<constants>[\w$]+)\.(?<serviceKey>[\w$]+)\]:JSON\.stringify\((?<services>[\w$]+)\)/g;
+  const patchedBannerPattern = /CUA_REPL_ENABLED_SURFACES:(?<surfaces>[\w$]+)\.surfaces\.join\(`,`\),\.\.\.\(\k<surfaces>\.surfaces\.includes\(`computer`\)\?\{NODE_REPL_JS_BANNER:`await import\("@oai\/cua\/tinyskyAlt"\);await\(await import\(\$\{JSON\.stringify\((?<path>[\w$]+)\.default\.join\((?<pluginRoot>[\w$]+),`scripts`,`native-client\.mjs`\)\)\}\)\)\.installLinuxComputerUse\(cua\);`\}:\{\}\),\[(?<constants>[\w$]+)\.(?<serviceKey>[\w$]+)\]:JSON\.stringify\((?<services>[\w$]+)\)/g;
   const currentBanners = [...source.matchAll(currentBannerPattern)];
   const patchedBanners = [...source.matchAll(patchedBannerPattern)];
   const pluginRootPattern = /[\w$]+=(?<path>[\w$]+)\.default\.join\((?<pluginRoot>[\w$]+),`\.mcp\.json`\)/g;
-  const pluginRoots = [...source.matchAll(pluginRootPattern)];
   const current = !linux && currentServices.length === 1 && patchedServices.length === 0 &&
     currentBanners.length === 1 && patchedBanners.length === 0;
   const patched = Boolean(linux) && currentServices.length === 0 && patchedServices.length === 1 &&
@@ -32,11 +33,25 @@ function applyUnifiedComputerUsePatch(source) {
     throw new Error("Linux unified Computer Use contract drift: expected one native trusted service selector");
   }
   const service = current ? currentServices[0] : patchedServices[0];
+  const banner = current ? currentBanners[0] : patchedBanners[0];
+  // Scope the cache root to the function that configures this service. Other
+  // bundled plugins also write .mcp.json and must not become native CUA roots.
+  const ownersOfService = [...source.matchAll(/(?:async )?function [\w$]+\([\w$]+\)\{/g)]
+    .filter(owner => owner.index < service.index)
+    .map(owner => ({ start: owner.index, end: findMatchingBrace(source, owner.index + owner[0].length - 1) }))
+    .filter(owner => owner.end > banner.index && owner.end > service.index);
+  const directOwners = ownersOfService.filter(owner => !ownersOfService.some(other =>
+    other.start > owner.start && other.end < owner.end));
+  if (directOwners.length !== 1) {
+    throw new Error("Linux unified Computer Use contract drift: changed native service owner");
+  }
+  const owner = directOwners[0];
+  const pluginRoots = [...source.matchAll(pluginRootPattern)]
+    .filter(root => root.index > owner.start && root.index < service.index);
   if (pluginRoots.length !== 1) {
     throw new Error("Linux unified Computer Use contract drift: changed plugin cache relationship");
   }
   const root = pluginRoots[0];
-  const banner = current ? currentBanners[0] : patchedBanners[0];
   if (banner.groups.surfaces !== service.groups.surfaces || banner.groups.services !== service.groups.services) {
     throw new Error("Linux unified Computer Use contract drift: changed native banner relationship");
   }
@@ -60,7 +75,7 @@ function applyUnifiedComputerUsePatch(source) {
     `CUA_REPL_ENABLED_SURFACES:${banner.groups.surfaces}.surfaces.join(\`,\`),` +
       `...(${banner.groups.surfaces}.surfaces.includes(\`computer\`)?{` +
       `NODE_REPL_JS_BANNER:\`await import("@oai/cua/tinyskyAlt");await(await import(\${JSON.stringify(${pathAlias}.default.join(${pluginRoot},\`scripts\`,\`native-client.mjs\`))})).installLinuxComputerUse(cua);\`}:{}),` +
-      `[${banner.groups.constants}.Il]:JSON.stringify(${banner.groups.services})`,
+      `[${banner.groups.constants}.${banner.groups.serviceKey}]:JSON.stringify(${banner.groups.services})`,
   );
   return patchedSource;
 }
